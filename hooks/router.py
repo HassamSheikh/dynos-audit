@@ -1366,19 +1366,27 @@ def build_executor_prompt(
     # exact same budget that the executor-plan record committed to.
     tool_budget = plan_entry.get("tool_budget")
     if tool_budget is not None:
+        seg_id = str(segment.get("id", "") or "")
+        evidence_target = f"evidence/{seg_id}.md" if seg_id else "your evidence file"
+        expected_artifact = segment.get("expected_artifact") or plan_entry.get("expected_artifact")
+        ledger_target = expected_artifact or evidence_target
+        # The tool_budget is shown for scoping, but it is deliberately NOT a
+        # cutoff: finishing the segment is the priority. Instead of pacing the
+        # executor to stop at a budget checkpoint (which left segments abandoned
+        # mid-edit with no evidence), the block asks for a resumable progress
+        # ledger so a continuation executor can pick the work up where an
+        # interrupted one stopped. See `ctl next-continuation`.
         parts.append(
             f"\n\n## Tool-Use Budget\n"
-            f"Your tool-use budget for this spawn is **{tool_budget}** tool calls. "
-            f"Stop and emit evidence within 3 calls of that budget."
+            f"The ~{tool_budget}-tool-call figure for this spawn is an ESTIMATE for "
+            f"scoping — NOT a cap. Finishing the segment is the priority: do not stop "
+            f"early or leave work half-done to stay under it.\n"
+            f"Keep your work resumable in case you are interrupted before finishing. "
+            f"Write {ledger_target} EARLY and update it incrementally with a progress "
+            f"ledger (done / in-flight / next). Work not written to disk does not exist — "
+            f"if you stop, a continuation executor resumes from exactly what is on disk "
+            f"and from your ledger, so keep the remaining work recorded there."
         )
-        expected_artifact = segment.get("expected_artifact") or plan_entry.get("expected_artifact")
-        if expected_artifact:
-            checkpoint_call = math.ceil(tool_budget / 3)
-            parts.append(
-                f"Budget {tool_budget}. Your artifact at {expected_artifact} must hold real content "
-                f"and a progress ledger (done / in-flight / next) by tool call {checkpoint_call}; "
-                f"update it incrementally — work not on disk does not exist."
-            )
 
     return "\n".join(parts)
 
