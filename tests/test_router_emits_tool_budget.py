@@ -257,7 +257,8 @@ def test_build_executor_prompt_contains_numeric_budget_value(dynos_home):
 
 
 def test_build_executor_prompt_budget_self_pacing_instruction(dynos_home):
-    """The prompt must include the self-pacing instruction mentioning 3 calls."""
+    """The budget block must frame the figure as guidance (not a cap) and ask
+    for a resumable progress ledger rather than a stop-at-N-calls cutoff."""
     import router as router_mod
 
     plan_entry = {
@@ -276,9 +277,14 @@ def test_build_executor_prompt_budget_self_pacing_instruction(dynos_home):
     }
     segment = {"id": "s1", "executor": "backend-executor", "files_expected": []}
     prompt = router_mod.build_executor_prompt(dynos_home.root, segment, plan_entry, "x")
-    # Spec AC-7: "Stop and emit evidence within 3 calls of that budget."
-    assert "3" in prompt, "self-pacing instruction '3 calls' not found in prompt"
+    # PR2 (7.5.12): the budget is guidance, not a cutoff — the block reframes
+    # from "stop within 3 calls" to a resumable progress ledger so an
+    # interrupted segment can be continued rather than abandoned.
     assert "budget" in prompt.lower(), "word 'budget' not found in prompt"
+    lowered = prompt.lower()
+    assert "not a cap" in lowered, "budget must be framed as an estimate, not a cap"
+    assert "resumable" in lowered, "resumability guidance missing from budget block"
+    assert "progress ledger" in lowered, "progress-ledger instruction missing from budget block"
 
 
 def test_build_executor_prompt_reads_budget_from_plan_entry_not_recomputed(dynos_home):

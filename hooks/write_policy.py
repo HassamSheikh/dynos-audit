@@ -91,6 +91,7 @@ _CONTROL_PLANE_EXACT = frozenset({
     "role-grants.json",
     "role-bindings.json",
     "tool-call-counters.json",
+    "continuation-state.json",
 })
 
 _WRAPPER_REQUIRED = {
@@ -655,6 +656,20 @@ def decide_write(attempt: WriteAttempt) -> WriteDecision:
             False,
             "tool-call-counters.json is hook-owned telemetry; only the "
             "hook subprocess may write it",
+            "deny",
+        )
+
+    if rel_posix == "continuation-state.json":
+        # continuation-state.json is ctl-owned state for the segment
+        # continuation loop (stall fingerprints + attempt counts). ctl writes
+        # it via direct file I/O in a subprocess, bypassing this policy. If an
+        # agent role could write it, an executor could forge a stall (forcing a
+        # premature escalation) or reset stall counts (spinning the loop
+        # forever). All agent roles are denied.
+        return WriteDecision(
+            False,
+            "continuation-state.json is ctl-owned continuation-loop state; "
+            "only the ctl subprocess may write it",
             "deny",
         )
 

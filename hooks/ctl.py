@@ -5298,6 +5298,188 @@ def cmd_run_execution_verify_evidence(args: argparse.Namespace) -> int:
         return 1
 
 
+# Continuation loop (segment-completion-first). When an executor exits without
+# finishing its segment — the classic "ran out of turns mid-edit, never wrote
+# evidence" failure — the segment is not abandoned. next-continuation reports
+# the incomplete segments with enough context to re-spawn an executor that
+# resumes exactly where the dead one stopped, and it loops until the segment is
+# actually complete. Budget is deliberately NOT a stop condition; the only
+# automatic halt is genuine stall (two consecutive continuations that move
+# nothing), surfaced so the orchestrator can escalate instead of spinning.
+_CONTINUATION_STATE_FILE = "continuation-state.json"
+_CONTINUATION_STALL_LIMIT = 2  # consecutive no-progress continuations => stalled
+
+
+def _segment_incompleteness(task_dir: Path) -> tuple[dict[str, list[str]], dict]:
+    """Return ({seg_id: [reasons]}, batch_payload) for every incomplete segment.
+
+    Authority is identical to the finish gate: a segment is incomplete if it is
+    still pending (no completion receipt) OR it fails evidence verification
+    (missing/empty evidence, files_expected absent on disk, verify_commands not
+    passing). Reusing _compute_execution_batch_payload + _verify_execution_evidence
+    keeps "incomplete" defined in exactly one place.
+    """
+    batch_payload = _compute_execution_batch_payload(
+        task_dir, expected_stages=frozenset({"EXECUTION", "TEST_EXECUTION"})
+    )
+    incomplete: dict[str, list[str]] = {}
+    for seg_id in batch_payload.get("pending_segments", []):
+        incomplete.setdefault(str(seg_id), []).append(
+            "segment pending: no completion receipt (executor did not finish)"
+        )
+    cached_ids = set(batch_payload.get("cached_segments", []))
+    errors, _verified = _verify_execution_evidence(task_dir, cached_ids)
+    for err in errors:
+        seg_id, sep, reason = err.partition(":")
+        seg_id = seg_id.strip()
+        if seg_id:
+            incomplete.setdefault(seg_id, []).append(reason.strip() if sep else err)
+    return incomplete, batch_payload
+
+
+def _continuation_fingerprint(
+    task_dir: Path, root: Path, seg_id: str, reasons: list[str], files_expected: list[str]
+) -> str:
+    """Cheap progress fingerprint for a segment. It changes whenever real
+    progress is made — a reason clears, the evidence file grows, or a
+    files_expected entry newly appears on disk — so an unchanged fingerprint
+    across calls means the last continuation moved nothing, the signal we treat
+    as a stall. Counting on-disk files (not just evidence) matters: an executor
+    that created files but died before writing evidence IS making progress and
+    must not be flagged as stalled."""
+    import hashlib  # noqa: PLC0415
+
+    evidence_path = task_dir / "evidence" / f"{seg_id}.md"
+    try:
+        ev_size = evidence_path.stat().st_size if evidence_path.exists() else -1
+    except OSError:
+        ev_size = -1
+    file_bits = []
+    for entry in sorted(files_expected):
+        try:
+            exists = (root / entry).exists() or bool(next(iter(root.glob(entry)), None))
+        except (ValueError, NotImplementedError, OSError):
+            exists = (root / entry).exists()
+        file_bits.append(f"{entry}={int(exists)}")
+    material = (
+        "\n".join(sorted(reasons))
+        + f"|evidence_bytes={ev_size}"
+        + "|files=" + ",".join(file_bits)
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def compute_continuation_status(task_dir: Path) -> dict:
+    """Report incomplete segments + per-segment continuation seed, updating the
+    stall-tracking state file. Does NOT transition stages or spawn anything —
+    it is the deterministic input to the orchestrator's continuation loop."""
+    incomplete, batch_payload = _segment_incompleteness(task_dir)
+    graph_by_id = {str(seg.get("id")): seg for seg in _load_graph_segments(task_dir)}
+    routing_by_id = {
+        str(entry.get("segment_id")): entry
+        for entry in _load_routing_segments(task_dir)
+        if isinstance(entry.get("segment_id"), str)
+    }
+
+    state_path = task_dir / _CONTINUATION_STATE_FILE
+    prev_state = load_json(state_path) if state_path.exists() else {}
+    prev_segments = prev_state.get("segments", {}) if isinstance(prev_state, dict) else {}
+    new_segments: dict[str, dict] = {}
+
+    segments_out: list[dict] = []
+    stalled: list[str] = []
+    for seg_id, reasons in sorted(incomplete.items()):
+        graph_seg = graph_by_id.get(seg_id, {})
+        routing = routing_by_id.get(seg_id, {})
+        seg_files = [
+            f for f in (graph_seg.get("files_expected") or []) if isinstance(f, str) and f
+        ]
+        fingerprint = _continuation_fingerprint(
+            task_dir, _root_for_task_dir(task_dir), seg_id, reasons, seg_files
+        )
+        prev = prev_segments.get(seg_id, {}) if isinstance(prev_segments, dict) else {}
+        attempt = int(prev.get("attempt", 0)) + 1
+        if prev.get("fingerprint") == fingerprint:
+            stall_count = int(prev.get("stall_count", 0)) + 1
+        else:
+            stall_count = 0
+        new_segments[seg_id] = {
+            "fingerprint": fingerprint,
+            "attempt": attempt,
+            "stall_count": stall_count,
+        }
+        is_stalled = stall_count >= _CONTINUATION_STALL_LIMIT
+        if is_stalled:
+            stalled.append(seg_id)
+        evidence_path = task_dir / "evidence" / f"{seg_id}.md"
+        segments_out.append({
+            "segment_id": seg_id,
+            "role": routing.get("executor") or graph_seg.get("executor"),
+            "model": routing.get("model"),
+            "files_expected": seg_files,
+            # criteria_ids may be ints or strings depending on the planner;
+            # carry them verbatim so the orchestrator can resolve their text
+            # from spec.md the same way it does for a normal spawn.
+            "criteria_ids": list(graph_seg.get("criteria_ids") or []),
+            "depends_on": [
+                d for d in (graph_seg.get("depends_on") or []) if isinstance(d, str) and d
+            ],
+            "incomplete_reasons": reasons,
+            "evidence_path": str(evidence_path.relative_to(_root_for_task_dir(task_dir)))
+            if evidence_path.exists() else str(evidence_path),
+            "evidence_present": evidence_path.exists(),
+            "continuation_attempt": attempt,
+            "stall_count": stall_count,
+            "stalled": is_stalled,
+        })
+
+    write_json(state_path, {"segments": new_segments})
+
+    if not incomplete:
+        status = "complete"
+    elif stalled and len(stalled) == len(segments_out):
+        # Every remaining incomplete segment is stalled: no forward progress is
+        # possible, so this is the hard-error halt (never a budget-count halt).
+        status = "stalled"
+    else:
+        status = "continuation_needed"
+
+    completed = list(batch_payload.get("completed_segments", []))
+    completed += list(batch_payload.get("cached_segments", []))
+    return {
+        "status": status,
+        "task_dir": str(task_dir),
+        "incomplete_segments": segments_out,
+        "stalled_segments": stalled,
+        "complete_segments": sorted(completed),
+    }
+
+
+def cmd_next_continuation(args: argparse.Namespace) -> int:
+    """Emit the continuation plan for a task's incomplete execution segments.
+
+    Exit codes:
+        0 — status "complete": every segment is done, proceed to the finish gate.
+        0 — status "continuation_needed": at least one segment can still make
+            progress; the printed incomplete_segments are the continuation seeds.
+        3 — status "stalled": every incomplete segment moved nothing across the
+            last two continuations; the orchestrator must escalate, not re-spawn.
+        1 — internal error.
+    """
+    task_dir = Path(args.task_dir).resolve()
+    root = _root_for_task_dir(task_dir)
+    blocked = _refuse_if_rules_corrupt(root)
+    if blocked is not None:
+        return blocked
+    try:
+        result = compute_continuation_status(task_dir)
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 3 if result["status"] == "stalled" else 0
+
+
 def cmd_run_verification_evidence(args: argparse.Namespace) -> int:
     """Execute plan-declared verify_commands and capture machine evidence (D6).
 
@@ -6906,6 +7088,14 @@ def register_execution_parsers(subparsers: argparse._SubParsersAction) -> None:
     )
     run_execution_verify_evidence_parser.add_argument("task_dir")
     run_execution_verify_evidence_parser.set_defaults(func=cmd_run_execution_verify_evidence)
+
+    next_continuation_parser = subparsers.add_parser(
+        "next-continuation",
+        help="Report incomplete execution segments + continuation seeds so a "
+             "stalled/timed-out executor's segment can be resumed to completion",
+    )
+    next_continuation_parser.add_argument("task_dir")
+    next_continuation_parser.set_defaults(func=cmd_next_continuation)
 
     run_verification_parser = subparsers.add_parser(
         "run-verification-evidence",

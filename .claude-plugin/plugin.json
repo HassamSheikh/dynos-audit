@@ -1,7 +1,7 @@
 {
   "name": "dynos-work",
   "description": "Autonomous Software Foundry. Human-directed, tool-grounded, self-improving. Plans, executes, audits, repairs — calibrates to your project over time.",
-  "version": "7.5.11",
+  "version": "7.5.12",
   "author": {
     "name": "dynos.fit",
     "url": "https://dynos.fit"

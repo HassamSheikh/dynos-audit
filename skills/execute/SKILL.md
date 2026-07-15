@@ -319,13 +319,32 @@ After each batch (or cached resolution) completes, record events and verify:
 
 **Test execution** (Step 4): Record test runner events with `--phase execution --stage TEST_EXECUTION`.
 
-When `run-execution-batch-plan` reports no pending segments, advance through ctl:
+**Segment continuation loop (finish the work — budget is NOT a stop condition).**
+
+An executor can exit before finishing its segment — most often it ran out of turns mid-edit and never wrote `evidence/{seg-id}.md`, leaving partial edits applied on disk (e.g. `app.js` now references a module it never imported). Do NOT abandon the segment, and do NOT cold-restart it blind. When `run-execution-batch-plan` reports no pending segments, run the continuation loop to drive every incomplete segment to completion:
+
+```bash
+"$DYNOS" ctl next-continuation .dynos/task-{id}
+```
+
+Parse the JSON `status`:
+
+- **`complete`** — every segment is done. Proceed to `run-execution-finish` below.
+- **`continuation_needed`** — for each entry in `incomplete_segments` whose `stalled` is `false`, spawn ONE continuation executor of the entry's `role` (pass its `model` as the model parameter), built exactly like a normal executor spawn (the Step 3 spawn block: the segment object, the criteria text extracted from `spec.md` by `criteria_ids`, dependency evidence, and `build_prompt_context` for `files_expected`) PLUS this continuation preamble:
+  - "This segment was already partially executed; the prior edits are applied on disk. Do NOT redo completed work — finish ONLY what remains."
+  - the entry's `incomplete_reasons`, verbatim, as the remaining checklist.
+  - "Write `evidence/{seg-id}.md` before you run low on turns."
+
+  After each continuation executor returns, run `run-execution-segment-done` for that segment (the same authoritative completion gate the normal batch loop uses — it writes the receipt and verifies ownership + evidence; a segment is not "complete" until that receipt exists). Then **re-run `next-continuation` and repeat.** There is no spawn-count cap in this loop — keep going as long as segments make progress. Do NOT run `check-spawn-budget` for continuation spawns; the spawn-budget backstop is for audit thrash, not for finishing execution.
+- **`stalled`** (exit code 3) — every remaining incomplete segment moved nothing across two consecutive continuations; `stalled_segments` names them. This is the ONLY automatic halt. Write `escalation.md` with `stalled_segments` and their `incomplete_reasons`, append a `[CONTINUATION-STALLED]` line to `execution-log.md`, and stop: the orchestrator cannot make progress and a human must intervene. Do NOT keep re-spawning.
+
+Only once `next-continuation` reports `complete` do you advance the stage:
 
 ```bash
 "$DYNOS" ctl run-execution-finish .dynos/task-{id}
 ```
 
-This command refuses the transition if any segment is still pending, AND it runs the full evidence verification (non-empty `evidence/{seg-id}.md` per segment, every `files_expected` entry on disk) inside the stage gate before advancing to `TEST_EXECUTION`. If it reports `"status": "blocked"` with `failures`, address each listed failure and re-run. Do not manually decide that execution is complete.
+This command refuses the transition if any segment is still pending, AND it runs the full evidence verification (non-empty `evidence/{seg-id}.md` per segment, every `files_expected` entry on disk) inside the stage gate before advancing to `TEST_EXECUTION`. It should pass now that the continuation loop reported `complete`; if it still reports `"status": "blocked"`, re-run `next-continuation` (state changed under it) and resolve what it surfaces. Do not manually decide that execution is complete.
 
 ### Step 4 — Run tests
 

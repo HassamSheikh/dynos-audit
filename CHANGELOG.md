@@ -11,6 +11,24 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.12] - 2026-07-15
+### Added
+- Segment continuation loop so execution finishes the work instead of stalling
+  when an executor runs out of turns mid-segment. New `ctl next-continuation`
+  reports every incomplete segment (reusing the finish gate's own authority:
+  pending segments + evidence/`files_expected` verification) together with a
+  resume seed — role, model, `files_expected`, `criteria_ids`, and the exact
+  `incomplete_reasons` — so a continuation executor picks up the partial work on
+  disk rather than cold-restarting. The execute skill now loops on it until
+  `complete`; budget is never the stop condition. The only automatic halt is a
+  genuine stall — two consecutive continuations that move nothing (no cleared
+  reason, no evidence growth, no new `files_expected` on disk) — reported as
+  status `stalled` (exit 3) for escalation instead of spinning forever.
+  `continuation-state.json` (stall fingerprints/attempt counts) is ctl-owned and
+  denied to agent roles in the write policy. Adds `tests/test_next_continuation.py`.
+
+---
+
 ## [7.5.11] - 2026-07-15
 ### Fixed
 - Project-root detection no longer treats the framework home (`~/.dynos` /
