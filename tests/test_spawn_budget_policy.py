@@ -36,8 +36,15 @@ def _retro(
     *,
     computed_at: str = "2026-05-01T00:00:00Z",
     streaks: dict | None = None,
+    signal_version: int | None = 2,
 ) -> dict:
-    """Build a minimal retrospective dict for policy-engine tests."""
+    """Build a minimal retrospective dict for policy-engine tests.
+
+    signal_version stamps wasted_spawns_signal_version so the retro is
+    aggregated under the current signal; pass None to simulate a pre-migration
+    (clean-audit-era) retrospective that must be skipped by the cold-start
+    filter.
+    """
     r: dict = {
         "task_id": task_id,
         "task_type": task_type,
@@ -45,9 +52,27 @@ def _retro(
         "wasted_spawns": wasted_spawns,
         "computed_at": computed_at,
     }
+    if signal_version is not None:
+        r["wasted_spawns_signal_version"] = signal_version
     if streaks is not None:
         r["auditor_zero_finding_streaks"] = streaks
     return r
+
+
+def _write_repair_log(
+    task_dir: Path, n_nonconverging: int, *, retry_count: int = 2, converging: int = 0
+) -> Path:
+    """Write repair-log.json with `n_nonconverging` findings stuck in repair
+    (retry_count >= 2) plus optional converging findings (retry_count 1) that
+    must NOT count. This is the new wasted_spawns signal source."""
+    tasks: list[dict] = [
+        {"finding_id": f"F-stuck-{i}", "retry_count": retry_count}
+        for i in range(n_nonconverging)
+    ]
+    tasks += [{"finding_id": f"F-ok-{i}", "retry_count": 1} for i in range(converging)]
+    p = task_dir / "repair-log.json"
+    p.write_text(json.dumps({"repair_cycle": 1, "batches": [{"tasks": tasks}]}, indent=2))
+    return p
 
 
 def _make_task_dir(
@@ -106,11 +131,17 @@ def _write_spawn_budget_policy(
     per_task_class: dict | None = None,
     exempt_auditors: list | None = None,
     global_fallback_threshold: int = 2,
+    version: int = 2,
 ) -> None:
-    """Write spawn-budget-policy.json into the persistent dir."""
+    """Write spawn-budget-policy.json into the persistent dir.
+
+    version defaults to the current signal version (2) so learned per-task-class
+    thresholds are honored; pass version=1 to simulate a stale pre-migration
+    policy that the cold-start guard must ignore.
+    """
     persistent_dir.mkdir(parents=True, exist_ok=True)
     policy = {
-        "version": 1,
+        "version": version,
         "computed_at": "2026-05-06T00:00:00Z",
         "per_task_class": per_task_class or {},
         "global_fallback": {"threshold_count": global_fallback_threshold},
@@ -228,8 +259,9 @@ def test_check_spawn_budget_ok_under_threshold_cold_start(
     monkeypatch.chdir(tmp_path)
     task_dir = _make_task_dir(tmp_path)
 
-    # Write one wasted audit report (count=1 < threshold=2)
-    _write_audit_report(task_dir, "code-quality-auditor", [])
+    # One non-converging repair (count=1 < threshold=2); a converging finding
+    # must not count.
+    _write_repair_log(task_dir, 1, converging=2)
 
     args = argparse.Namespace(task_dir=str(task_dir))
     rc = ctl.cmd_check_spawn_budget(args)
@@ -263,10 +295,8 @@ def test_check_spawn_budget_paused_above_learned_threshold(
     )
 
     task_dir = _make_task_dir(tmp_path)
-    # Write 3 wasted reports => count=3 >= threshold=3
-    _write_audit_report(task_dir, "code-quality-auditor", [], filename="r1.json")
-    _write_audit_report(task_dir, "dead-code-auditor", [], filename="r2.json")
-    _write_audit_report(task_dir, "db-schema-auditor", [], filename="r3.json")
+    # 3 non-converging repairs => count=3 >= threshold=3
+    _write_repair_log(task_dir, 3)
 
     args = argparse.Namespace(task_dir=str(task_dir))
     rc = ctl.cmd_check_spawn_budget(args)
@@ -312,11 +342,8 @@ def test_check_spawn_budget_uses_global_fallback_threshold(
     )
 
     task_dir = _make_task_dir(tmp_path)
-    # 4 wasted reports — between the broken-default 2 and the configured 5.
-    for i in range(4):
-        _write_audit_report(
-            task_dir, f"auditor-{i}", [], filename=f"r{i}.json"
-        )
+    # 4 non-converging repairs — between the broken-default 2 and the configured 5.
+    _write_repair_log(task_dir, 4)
 
     args = argparse.Namespace(task_dir=str(task_dir))
     rc = ctl.cmd_check_spawn_budget(args)
@@ -329,124 +356,71 @@ def test_check_spawn_budget_uses_global_fallback_threshold(
     assert payload["status"] == "ok"
 
 
-def test_ensemble_cascade_final_tier_only_counted(tmp_path, monkeypatch, capsys):
-    """For ensemble auditors, only the final (highest mtime) report is counted.
-    Earlier reports are deduplicated away."""
-    dynos_home = _set_dynos_home(monkeypatch, tmp_path)
+def test_converging_repairs_are_not_wasted(tmp_path, monkeypatch, capsys):
+    """A finding whose repair converges (retry_count < 2) is NOT wasted, so a
+    task whose repairs stick never trips the backstop."""
+    _set_dynos_home(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
-
-    # Policy: threshold 2 for feature:medium (learned)
-    persistent = _persistent_for_cwd(dynos_home)
-    _write_spawn_budget_policy(
-        persistent,
-        per_task_class={
-            "feature:medium": {
-                "threshold_count": 2,
-                "waste_count_baseline": 1.0,
-                "waste_count_stddev": 0.0,
-                "n_observations": 3,
-            }
-        },
-    )
-
     task_dir = _make_task_dir(tmp_path)
+    _write_repair_log(task_dir, 0, converging=5)
 
-    # Write audit-plan.json marking "vision-auditor" as ensemble
-    (task_dir / "audit-plan.json").write_text(
-        json.dumps({"auditors": [{"name": "vision-auditor", "ensemble": True}]})
-    )
-
-    # Two wasted reports for the same ensemble auditor (simulating cascade tiers)
-    # The final tier (r2.json) has findings, so it is NOT wasted -> count stays 0
-    reports_dir = task_dir / "audit-reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    import time
-
-    p1 = reports_dir / "vision-auditor-r1.json"
-    p1.write_text(json.dumps({"auditor": "vision-auditor", "findings": []}))
-    time.sleep(0.01)  # ensure different mtime
-    p2 = reports_dir / "vision-auditor-r2.json"
-    p2.write_text(json.dumps({"auditor": "vision-auditor", "findings": ["finding"]}))
-
-    # One non-ensemble wasted report
-    _write_audit_report(task_dir, "dead-code-auditor", [], filename="dead-code.json")
-
-    args = argparse.Namespace(task_dir=str(task_dir))
-    rc = ctl.cmd_check_spawn_budget(args)
-    out = capsys.readouterr().out.strip()
+    rc = ctl.cmd_check_spawn_budget(argparse.Namespace(task_dir=str(task_dir)))
+    payload = json.loads(capsys.readouterr().out.strip())
     assert rc == 0
-    payload = json.loads(out)
-    # Only dead-code-auditor counts as wasted (count=1); vision-auditor's final
-    # report has findings so is not wasted after dedup
-    assert payload["count"] == 1
-    assert payload["status"] == "ok"
-
-
-def test_ensemble_cascade_succeeded_not_wasted(tmp_path, monkeypatch, capsys):
-    """An ensemble auditor whose final (latest mtime) report has findings is NOT
-    counted as wasted, even if earlier cascade tiers were empty."""
-    dynos_home = _set_dynos_home(monkeypatch, tmp_path)
-    monkeypatch.chdir(tmp_path)
-    persistent = _persistent_for_cwd(dynos_home)
-    _write_spawn_budget_policy(persistent)
-
-    task_dir = _make_task_dir(tmp_path)
-    (task_dir / "audit-plan.json").write_text(
-        json.dumps({"auditors": [{"name": "spec-auditor", "ensemble": True}]})
-    )
-
-    reports_dir = task_dir / "audit-reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    import time
-
-    p1 = reports_dir / "spec-auditor-tier1.json"
-    p1.write_text(json.dumps({"auditor": "spec-auditor", "findings": []}))
-    time.sleep(0.01)
-    p2 = reports_dir / "spec-auditor-tier2.json"
-    p2.write_text(json.dumps({"auditor": "spec-auditor", "findings": ["real-finding"]}))
-
-    args = argparse.Namespace(task_dir=str(task_dir))
-    rc = ctl.cmd_check_spawn_budget(args)
-    out = capsys.readouterr().out.strip()
-    assert rc == 0
-    payload = json.loads(out)
     assert payload["count"] == 0
     assert payload["status"] == "ok"
 
 
-def test_exempt_auditor_not_counted(tmp_path, monkeypatch, capsys):
-    """Auditors listed in policy exempt_auditors are NOT counted toward the budget."""
+def test_clean_audits_no_longer_pause(tmp_path, monkeypatch, capsys):
+    """Regression for the inverted trigger: clean audit reports (empty findings)
+    must NOT count toward the backstop anymore — only repair non-convergence."""
+    _set_dynos_home(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    task_dir = _make_task_dir(tmp_path)
+    # Several passing (clean) audit dimensions + no non-converging repairs.
+    for i in range(4):
+        _write_audit_report(task_dir, f"auditor-{i}", [], filename=f"r{i}.json")
+
+    rc = ctl.cmd_check_spawn_budget(argparse.Namespace(task_dir=str(task_dir)))
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert rc == 0
+    assert payload["count"] == 0
+    assert payload["status"] == "ok"
+
+
+def test_cold_start_ignores_pre_migration_retrospectives():
+    """The learning engine skips retrospectives recorded under the old signal
+    (no wasted_spawns_signal_version tag) so thresholds re-learn cleanly."""
+    retros = [
+        _retro("t1", "feature", "medium", 9, signal_version=None),
+        _retro("t2", "feature", "medium", 9, signal_version=None),
+        _retro("t3", "feature", "medium", 9, signal_version=None),
+    ]
+    policy = _build_spawn_budget_policy_data(retros)
+    assert policy["version"] == 2
+    assert "feature:medium" not in policy["per_task_class"]
+
+
+def test_stale_v1_policy_thresholds_are_ignored(tmp_path, monkeypatch, capsys):
+    """A stale v1 policy (thresholds trained on clean audits) must not gate the
+    new signal: the cold-start guard falls back to global_fallback."""
     dynos_home = _set_dynos_home(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
-
     persistent = _persistent_for_cwd(dynos_home)
     _write_spawn_budget_policy(
         persistent,
-        per_task_class={
-            "feature:medium": {
-                "threshold_count": 2,
-                "waste_count_baseline": 1.0,
-                "waste_count_stddev": 0.0,
-                "n_observations": 3,
-            }
-        },
-        exempt_auditors=["vision-auditor"],
+        version=1,  # stale
+        per_task_class={"feature:medium": {"threshold_count": 2}},
+        global_fallback_threshold=5,
     )
-
     task_dir = _make_task_dir(tmp_path)
+    _write_repair_log(task_dir, 3)  # 3 >= stale-2 would pause; < fallback-5 => ok
 
-    # Two wasted reports: one exempt, one not
-    _write_audit_report(task_dir, "vision-auditor", [], filename="exempt.json")
-    _write_audit_report(task_dir, "dead-code-auditor", [], filename="nonexempt.json")
-
-    args = argparse.Namespace(task_dir=str(task_dir))
-    rc = ctl.cmd_check_spawn_budget(args)
-    out = capsys.readouterr().out.strip()
+    rc = ctl.cmd_check_spawn_budget(argparse.Namespace(task_dir=str(task_dir)))
+    payload = json.loads(capsys.readouterr().out.strip())
     assert rc == 0
-    payload = json.loads(out)
-    # Only dead-code-auditor counts (1 < threshold 2)
-    assert payload["count"] == 1
-    assert payload["exempt_count"] == 1
+    assert payload["threshold"] == 5  # global fallback, not the stale v1 value
+    assert payload["count"] == 3
     assert payload["status"] == "ok"
 
 

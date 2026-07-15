@@ -1182,6 +1182,57 @@ def compute_pipeline_budget(task_dir: Path) -> dict:
     }
 
 
+# A repair "converges" when the fix sticks. A finding whose retry_count reaches
+# this bound has been repaired and re-flagged repeatedly — the repair loop is
+# churning without resolving it. This is the genuine "wasted spawn" signal that
+# replaced the old (inverted) clean-audit count. Kept in lockstep with the
+# retry_count>=2 deep-tier escalation trigger in ctl build-repair-log.
+REPAIR_NONCONVERGENCE_RETRIES = 2
+
+# Bump when the wasted_spawns SIGNAL changes meaning, so the learning engine
+# cold-starts (see memory/policy_engine._build_spawn_budget_policy_data) instead
+# of mixing incomparable observations across the definition change.
+WASTED_SPAWNS_SIGNAL_VERSION = 2
+
+
+def count_nonconverging_repairs(task_dir: Path) -> int:
+    """Count distinct findings whose repair is not converging.
+
+    Reads repair-log.json and returns the number of finding_ids whose maximum
+    retry_count across all batches is >= REPAIR_NONCONVERGENCE_RETRIES — findings
+    repaired repeatedly that keep coming back. This is the genuine no-progress
+    signal that replaced the inverted "clean audit == wasted" count. Returns 0
+    when the repair log is absent or unreadable: a task that never needed repair
+    has, by definition, no non-converging repairs.
+    """
+    repair_log_path = task_dir / "repair-log.json"
+    if not repair_log_path.exists():
+        return 0
+    try:
+        repair_log = load_json(repair_log_path)
+    except Exception:
+        return 0
+    if not isinstance(repair_log, dict):
+        return 0
+    max_retry: dict[str, int] = {}
+    for batch in repair_log.get("batches", []) or []:
+        if not isinstance(batch, dict):
+            continue
+        for task in batch.get("tasks", []) or []:
+            if not isinstance(task, dict):
+                continue
+            fid = task.get("finding_id")
+            if not isinstance(fid, str) or not fid:
+                continue
+            try:
+                rc = int(task.get("retry_count", 0) or 0)
+            except (TypeError, ValueError):
+                rc = 0
+            if rc > max_retry.get(fid, -1):
+                max_retry[fid] = rc
+    return sum(1 for rc in max_retry.values() if rc >= REPAIR_NONCONVERGENCE_RETRIES)
+
+
 def compute_reward(task_dir: Path) -> dict:
     """Deterministically compute reward scores from task artifacts.
 
@@ -1622,15 +1673,11 @@ def compute_reward(task_dir: Path) -> dict:
         except OSError:
             pass
 
-    wasted_spawns = 0
-    if reports_dir.exists():
-        for report_path in sorted(reports_dir.glob("*.json")):
-            try:
-                report = load_json(report_path)
-                if len(report.get("findings", [])) == 0:
-                    wasted_spawns += 1
-            except (json.JSONDecodeError, OSError):
-                continue
+    # wasted_spawns := repair non-convergence, NOT clean audits. A clean audit
+    # is a passing dimension (the goal), never waste; the genuine no-progress
+    # signal is a finding the repair loop keeps re-flagging. See
+    # docs/spawn-budget-convergence-design.md.
+    wasted_spawns = count_nonconverging_repairs(task_dir)
 
     # --- 7. Reward vector ---
     # quality_score — only blocking findings affect quality.
@@ -1698,6 +1745,7 @@ def compute_reward(task_dir: Path) -> dict:
         "repair_cycle_count": repair_cycle_count,
         "subagent_spawn_count": subagent_spawn_count,
         "wasted_spawns": wasted_spawns,
+        "wasted_spawns_signal_version": WASTED_SPAWNS_SIGNAL_VERSION,
         "auditor_zero_finding_streaks": auditor_zero_finding_streaks,
         "executor_zero_repair_streak": executor_zero_repair_streak,
         "token_usage_by_agent": token_usage_by_agent,

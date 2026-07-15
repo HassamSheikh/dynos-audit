@@ -713,6 +713,14 @@ def _migrate_model_overrides(root: Path, model_policy_data: dict[str, dict]) -> 
     return merged
 
 
+# Current wasted_spawns signal version. Keep in lockstep with
+# hooks/lib_validate.WASTED_SPAWNS_SIGNAL_VERSION. When the signal's meaning
+# changes, only retrospectives stamped with the current version are aggregated,
+# so the learned thresholds cold-start instead of mixing incomparable
+# observations. See docs/spawn-budget-convergence-design.md.
+_WASTED_SPAWNS_SIGNAL_VERSION = 2
+
+
 def _build_spawn_budget_policy_data(retrospectives: list[dict]) -> dict:
     """Compute spawn-budget policy data from task retrospectives.
 
@@ -773,6 +781,13 @@ def _build_spawn_budget_policy_data(retrospectives: list[dict]) -> dict:
     grouped: dict[str, list[float]] = {}
     for retro in retrospectives:
         if not isinstance(retro, dict):
+            continue
+        # Cold-start guard: only aggregate observations recorded under the
+        # current wasted_spawns signal. Pre-migration retrospectives (missing
+        # the tag, or an older version) counted clean audits — incomparable to
+        # the repair-non-convergence signal — and are skipped here so the
+        # learned thresholds re-learn cleanly.
+        if retro.get("wasted_spawns_signal_version") != _WASTED_SPAWNS_SIGNAL_VERSION:
             continue
         task_type = retro.get("task_type")
         risk_level = retro.get("risk_level")
@@ -858,7 +873,7 @@ def _build_spawn_budget_policy_data(retrospectives: list[dict]) -> dict:
                 exempt.add(auditor_name)
 
     return {
-        "version": 1,
+        "version": _WASTED_SPAWNS_SIGNAL_VERSION,
         "computed_at": now_iso(),
         "per_task_class": per_task_class,
         "global_fallback": {"threshold_count": 2},

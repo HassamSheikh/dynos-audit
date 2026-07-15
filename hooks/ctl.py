@@ -1870,34 +1870,6 @@ def cmd_apply_auto_approve_veto(args: argparse.Namespace) -> int:
     return 0
 
 
-def _collect_ensemble_auditors(plan: object) -> set:
-    """Permissively collect auditor names marked ensemble:true from audit-plan.json.
-
-    Handles two common shapes:
-      - plan["auditors"] as list of dicts with "name" and "ensemble" fields
-      - top-level dict keyed by auditor name with "ensemble" field
-
-    Returns a set of auditor name strings. If the plan has no recognised
-    shape, returns an empty set (no dedup applied).
-    """
-    result: set[str] = set()
-    if not isinstance(plan, dict):
-        return result
-    # Shape 1: plan["auditors"] as list of dicts
-    auds = plan.get("auditors")
-    if isinstance(auds, list):
-        for a in auds:
-            if isinstance(a, dict) and a.get("ensemble") is True:
-                name = a.get("name")
-                if isinstance(name, str):
-                    result.add(name)
-    # Shape 2: top-level dict keyed by auditor name
-    for k, v in plan.items():
-        if isinstance(v, dict) and v.get("ensemble") is True:
-            result.add(k)
-    return result
-
-
 def compute_spawn_budget_status(
     task_dir: Path,
     manifest: dict,
@@ -1909,14 +1881,21 @@ def compute_spawn_budget_status(
      contributing_auditors} payload WITHOUT writing receipts or
     mutating manifest.
 
-    Same counting/dedup logic as the CLI command (AC-8a..AC-8e, AC-9).
-    Used by hooks/circuit_breaker.py to avoid the per-call subprocess
-    fork (perf-001 / residual 0fe95494). The CLI command wraps this
-    function and adds the side-effect branch for status=='paused'.
+    ``count`` is the number of non-converging repairs (findings the repair loop
+    keeps re-flagging: max retry_count >= 2), NOT the old clean-audit count. A
+    clean audit is a passing dimension, never waste. ``exempt_count`` is always
+    0 and ``contributing_auditors`` always empty — the ensemble-dedup and
+    exempt-auditor machinery that softened the clean-audit count retired with
+    it (kept in the payload for backward compatibility). Per-task-class learned
+    thresholds are honored only under a v2+ policy (cold-start guard). See
+    docs/spawn-budget-convergence-design.md.
 
-    ``project_root`` defaults to ``Path.cwd()`` to match the CLI
-    behavior; pass an explicit value when calling from a context where
-    cwd may be wrong.
+    Used by hooks/circuit_breaker.py to avoid the per-call subprocess fork
+    (perf-001 / residual 0fe95494). The CLI command wraps this function and
+    adds the side-effect branch for status=='paused'.
+
+    ``project_root`` defaults to ``Path.cwd()`` to match the CLI behavior; pass
+    an explicit value when calling from a context where cwd may be wrong.
     """
     from lib_core import _persistent_project_dir  # noqa: PLC0415
 
@@ -1945,13 +1924,6 @@ def compute_spawn_budget_status(
     if isinstance(ptc, dict):
         per_task_class = ptc
 
-    exempt_auditors: set[str] = set()
-    ea = policy.get("exempt_auditors")
-    if isinstance(ea, list):
-        for name in ea:
-            if isinstance(name, str):
-                exempt_auditors.add(name)
-
     classification = manifest.get("classification") or {}
     if isinstance(classification, dict):
         task_type = classification.get("type") or classification.get("task_type")
@@ -1963,64 +1935,36 @@ def compute_spawn_budget_status(
     else:
         task_class = "unknown:unknown"
 
+    # Cold-start guard: honor the learned per-task-class threshold only when the
+    # on-disk policy was computed under the CURRENT wasted_spawns signal (repair
+    # non-convergence). A stale v1 policy carries thresholds trained on the old
+    # clean-audit count and must not gate the new signal, so fall back to
+    # global_fallback until memory regenerates a v2 policy.
+    # See docs/spawn-budget-convergence-design.md.
+    from lib_validate import (  # noqa: PLC0415
+        WASTED_SPAWNS_SIGNAL_VERSION,
+        count_nonconverging_repairs,
+    )
+
+    policy_version = policy.get("version")
+    learned_ok = (
+        isinstance(policy_version, int)
+        and policy_version >= WASTED_SPAWNS_SIGNAL_VERSION
+    )
     task_class_policy = per_task_class.get(task_class)
-    if isinstance(task_class_policy, dict) and isinstance(task_class_policy.get("threshold_count"), int):
+    if (
+        learned_ok
+        and isinstance(task_class_policy, dict)
+        and isinstance(task_class_policy.get("threshold_count"), int)
+    ):
         threshold: int = task_class_policy["threshold_count"]
     else:
         threshold = global_fallback_threshold
 
-    ensemble_set: set[str] = set()
-    audit_plan_path = task_dir / "audit-plan.json"
-    try:
-        plan_raw = load_json(audit_plan_path)
-        ensemble_set = _collect_ensemble_auditors(plan_raw)
-    except Exception:
-        ensemble_set = set()
-
-    reports_dir = task_dir / "audit-reports"
-    all_reports: list[tuple[str, list, bool, Path, float]] = []
-    if reports_dir.is_dir():
-        for report_path in reports_dir.glob("*.json"):
-            try:
-                data = load_json(report_path)
-            except Exception:
-                continue
-            if not isinstance(data, dict):
-                continue
-            auditor = data.get("auditor")
-            findings = data.get("findings")
-            if not isinstance(auditor, str) or not isinstance(findings, list):
-                continue
-            is_wasted = (findings == [])
-            try:
-                mtime = report_path.stat().st_mtime
-            except OSError:
-                mtime = 0.0
-            all_reports.append((auditor, findings, is_wasted, report_path, mtime))
-
-    ensemble_by_auditor: dict[str, list[tuple[str, list, bool, Path, float]]] = {}
-    surviving_reports: list[tuple[str, list, bool, Path, float]] = []
-    for entry in all_reports:
-        auditor = entry[0]
-        if auditor in ensemble_set:
-            ensemble_by_auditor.setdefault(auditor, []).append(entry)
-        else:
-            surviving_reports.append(entry)
-    for auditor, entries in ensemble_by_auditor.items():
-        best = max(entries, key=lambda e: (e[4], e[3].name))
-        surviving_reports.append(best)
-
-    count: int = 0
-    exempt_count: int = 0
-    contributing_auditors: set[str] = set()
-    for auditor, _findings, is_wasted, _path, _mtime in surviving_reports:
-        if not is_wasted:
-            continue
-        if auditor in exempt_auditors:
-            exempt_count += 1
-        else:
-            count += 1
-            contributing_auditors.add(auditor)
+    # wasted_spawns := repair non-convergence — findings the repair loop keeps
+    # re-flagging — NOT clean audits. The ensemble-dedup and exempt-auditor
+    # machinery that once softened the clean-audit count retired with it.
+    count = count_nonconverging_repairs(task_dir)
 
     if manifest.get("blocked_reason") == "wasted_spawns_exceeded":
         status = "already_paused"
@@ -2033,9 +1977,9 @@ def compute_spawn_budget_status(
         "status": status,
         "count": count,
         "threshold": threshold,
-        "exempt_count": exempt_count,
+        "exempt_count": 0,
         "task_class": task_class,
-        "contributing_auditors": sorted(contributing_auditors),
+        "contributing_auditors": [],
     }
 
 
@@ -2043,9 +1987,10 @@ def cmd_check_spawn_budget(args: argparse.Namespace) -> int:
     """Check whether the current task has exhausted its wasted-spawn budget.
 
     Reads spawn-budget-policy.json from the persistent project dir, counts
-    wasted (empty-findings) audit reports with ensemble-cascade dedup, and
-    either emits status "ok" / "paused" / "already_paused" to stdout as
-    single-line JSON (exit 0), or exits 1 when manifest.json is missing.
+    non-converging repairs (findings the repair loop keeps re-flagging, from
+    repair-log.json), and either emits status "ok" / "paused" / "already_paused"
+    to stdout as single-line JSON (exit 0), or exits 1 when manifest.json is
+    missing.
 
     stdout: {"status": "ok"|"paused"|"already_paused", "count": <int>,
              "threshold": <int>, "exempt_count": <int>, "task_class": "<str>"}
