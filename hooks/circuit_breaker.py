@@ -3,7 +3,7 @@
 Encodes runtime conditions under which a task should be hard-aborted or
 downgraded. Live-enforceable (EXECUTION) conditions:
 
-    1. wasted_spawns_abort       (>= 9 wasted spawns; via ctl.py check-spawn-budget)
+    1. wasted_spawns_abort       (>= 9 non-converging repairs; via ctl.py check-spawn-budget)
     2. small_task_token_overrun  (>= 9_371_185 tokens on a small bugfix/feature task)
     3. bugfix_token_overrun      (>= 68_283_719 tokens on a bugfix)
     4. small_task_token_downgrade  (>= 7_496_948 but < 9_371_185)
@@ -592,8 +592,8 @@ def _evaluate_execution(
             "abort": True,
             "trigger": "wasted_spawns_abort",
             "reason": (
-                "wasted spawn count reached the hard-abort threshold; "
-                "the task is burning tokens with no useful output."
+                "non-converging-repair count reached the hard-abort threshold; "
+                "repairs keep re-flagging findings without resolving them."
             ),
             "limit": WASTED_SPAWN_ABORT_THRESHOLD,
             "actual": wasted,

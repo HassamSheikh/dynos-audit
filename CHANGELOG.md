@@ -11,6 +11,29 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.13] - 2026-07-15
+### Changed
+- Re-based the spawn-budget backstop off clean-audit counting. "Wasted spawns"
+  previously meant *empty-findings audit reports* — a clean audit is a passing
+  dimension, so with a default threshold of 2 any healthy task whose dimensions
+  passed would trip a hard pause requiring a human `spawn-resume`. The signal is
+  now **repair non-convergence**: distinct findings the repair loop keeps
+  re-flagging (max `retry_count >= 2` in `repair-log.json`), computed once in
+  `lib_validate.count_nonconverging_repairs` and used by both the runtime pause
+  (`compute_spawn_budget_status`) and the retrospective. The obsolete
+  ensemble-dedup and exempt-auditor machinery that only existed to soften the
+  clean-audit count is removed. `circuit_breaker.WASTED_SPAWN_ABORT_THRESHOLD`
+  (9) is unchanged in value; it now counts non-converging repairs.
+- Cold-started the learned thresholds: retrospectives carry
+  `wasted_spawns_signal_version = 2`, `policy_engine` aggregates only current-
+  version observations (pre-migration clean-audit counts are skipped) and stamps
+  the policy `version: 2`, and `compute_spawn_budget_status` honors learned
+  per-task-class thresholds only under a v2+ policy — falling back to
+  `global_fallback` until the new signal re-learns. Design:
+  `docs/spawn-budget-convergence-design.md`.
+
+---
+
 ## [7.5.12] - 2026-07-15
 ### Added
 - Segment continuation loop so execution finishes the work instead of stalling
