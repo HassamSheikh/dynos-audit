@@ -22,6 +22,27 @@ import shlex
 import sys
 from pathlib import Path
 
+# Shared discriminator that rejects the framework home (~/.dynos) and stray
+# orphan .dynos dirs when resolving a project root from an ancestor walk. The
+# `.dynos` name is overloaded (framework home vs. per-project control plane);
+# a bare `.dynos`.is_dir() match would treat $HOME — or any orphan .dynos high
+# in the tree — as a project root and govern unrelated repos. If the shared
+# module cannot be imported, fall back to excluding just the framework home,
+# which is the critical half of the guard.
+try:
+    from lib_dynos_root import is_project_dynos_dir as _is_project_dynos_dir
+except Exception:  # pragma: no cover - defensive import fallback
+    def _is_project_dynos_dir(dynos_dir: Path) -> bool:
+        try:
+            if not dynos_dir.is_dir():
+                return False
+            home = Path(
+                os.environ.get("DYNOS_HOME") or (Path.home() / ".dynos")
+            ).expanduser().resolve()
+            return dynos_dir.resolve() != home
+        except Exception:
+            return False
+
 # Allowlist of valid executor role names that may appear in active-segment-role.
 # Privileged internal roles (ctl, receipt-writer, eventbus, scheduler, system)
 # are intentionally excluded to prevent role-file injection attacks.
@@ -161,7 +182,7 @@ def _task_dir_from_ancestor_path(cwd: Path) -> Path | None:
 def _project_root_from_ancestors(cwd: Path) -> Path | None:
     current = cwd.resolve()
     for ancestor in [current, *current.parents]:
-        if (ancestor / ".dynos").is_dir():
+        if _is_project_dynos_dir(ancestor / ".dynos"):
             return ancestor
     return None
 
@@ -217,7 +238,7 @@ def _find_task_dir_from_ancestors(cwd: Path) -> Path | None:
     current = cwd.resolve()
     for ancestor in [current, *current.parents]:
         dynos = ancestor / ".dynos"
-        if dynos.is_dir():
+        if _is_project_dynos_dir(dynos):
             active_tasks = _active_tasks_from_manifests(dynos)
             pointer_path = dynos / "active-task.json"
             if pointer_path.exists():
@@ -920,7 +941,7 @@ def main() -> int:
                 dynos_root = task_dir.parent
             else:
                 for ancestor in [cwd, *cwd.parents]:
-                    if (ancestor / ".dynos").is_dir():
+                    if _is_project_dynos_dir(ancestor / ".dynos"):
                         dynos_root = ancestor / ".dynos"
                         break
             if dynos_root is not None:

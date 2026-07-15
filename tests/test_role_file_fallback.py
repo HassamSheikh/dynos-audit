@@ -95,12 +95,21 @@ def _invoke_resolve_role(
 
 
 def _make_task_dir(tmp_path: Path, task_id: str = "task-20260423-RF1") -> tuple[Path, Path]:
-    """Create (root, task_dir) with minimal structure."""
+    """Create (root, task_dir) with minimal structure.
+
+    A non-terminal manifest.json is required: pre_tool_use ignores a
+    DYNOS_TASK_DIR whose manifest is missing or terminal (stale-binding
+    hardening), which would otherwise drop the task_dir and short-circuit role
+    resolution before the active-segment-role fallthrough under test.
+    """
     root = tmp_path / "project"
     root.mkdir(exist_ok=True)
     (root / ".dynos").mkdir(exist_ok=True)
     task_dir = root / ".dynos" / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "manifest.json").write_text(
+        json.dumps({"stage": "EXECUTION"}), encoding="utf-8"
+    )
     return root, task_dir
 
 

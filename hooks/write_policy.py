@@ -349,10 +349,31 @@ def _self_modification_denial(attempt: WriteAttempt, path: Path) -> WriteDecisio
 
 
 def _nearest_project_root_from_cwd(cwd: Path) -> Path | None:
-    """Return nearest ancestor containing .dynos, or None if not in a project."""
+    """Return nearest ancestor governed by a project .dynos, or None.
+
+    The `.dynos` name is overloaded (framework home vs. per-project control
+    plane), so a bare-name match would treat `$HOME` — or a stray orphan
+    `.dynos` high in the tree — as a project root and pull unrelated repos into
+    governance. `is_project_dynos_dir` is the shared discriminator that rejects
+    those cases; on import failure fall back to excluding the framework home,
+    which is the critical part of the guard.
+    """
     resolved = cwd.resolve()
+    try:
+        from lib_dynos_root import is_project_dynos_dir  # noqa: PLC0415
+    except Exception:
+        _home = Path(
+            os.environ.get("DYNOS_HOME") or (Path.home() / ".dynos")
+        ).expanduser().resolve()
+
+        def is_project_dynos_dir(dynos_dir: Path) -> bool:
+            try:
+                return dynos_dir.is_dir() and dynos_dir.resolve() != _home
+            except Exception:
+                return False
+
     for candidate in (resolved, *resolved.parents):
-        if (candidate / ".dynos").is_dir():
+        if is_project_dynos_dir(candidate / ".dynos"):
             return candidate
     return None
 
@@ -404,9 +425,21 @@ def _project_scope_roots(attempt: WriteAttempt) -> tuple[Path, ...]:
 
 def _is_inside_project_scope(attempt: WriteAttempt, path: Path) -> bool:
     roots = _project_scope_roots(attempt)
-    if not roots:
-        return True
-    return any(path == root or _is_under(path, root) for root in roots)
+    if roots:
+        return any(path == root or _is_under(path, root) for root in roots)
+    # No project root resolved from the active task or the hook's cwd. Rather
+    # than govern-when-unsure (which treated every non-dynos folder — and, via
+    # the overloaded `.dynos` home, all of $HOME — as in-scope and produced
+    # spurious write denials), decide from the TARGET path itself: govern only
+    # when the write lands inside a real project control plane. A write to a
+    # location with no governing project .dynos ancestor is simply not ours to
+    # police. The self-modification guard and hook-owned control-plane checks
+    # in decide_write run *before* this gate, so they still apply regardless.
+    try:
+        target_parent = path.parent
+    except Exception:
+        return False
+    return _nearest_project_root_from_cwd(target_parent) is not None
 
 
 # Task-root files the orchestrator authors directly: logs, escalation notes,
