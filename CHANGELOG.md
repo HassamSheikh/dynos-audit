@@ -11,6 +11,20 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.14] - 2026-07-15
+### Added
+- Guard test (`tests/test_domain_registry_invariant.py`) asserting
+  `lib_core.VALID_DOMAINS` and the `domain_conditional` keys in
+  `router._DEFAULT_AUDITOR_REGISTRY` stay a set-equal, closed vocabulary.
+  `build_audit_plan` selects domain-scoped auditors via `dict.get(domain, [])`,
+  so a domain present in one but not the other silently drifts: a new valid
+  domain would run only the `always` roster, and a typo'd registry key would be
+  a dead entry that never fires. The test fails on either drift and documents
+  that an intentionally `always`-covered domain must carry an explicit
+  empty-list entry rather than be omitted.
+
+---
+
 ## [7.5.13] - 2026-07-15
 ### Changed
 - Re-based the spawn-budget backstop off clean-audit counting. "Wasted spawns"
