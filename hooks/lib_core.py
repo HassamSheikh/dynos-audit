@@ -704,11 +704,12 @@ def _check_ensemble_voting(
         # Acceptance rule: either every voting-model receipt found NOTHING
         # (zero findings, blocking or not), or an escalation receipt exists.
         # The cascade protocol escalates to the deep tier on ANY finding — a
-        # non-blocking nit at haiku still warrants opus confirmation — so the
-        # gate binds on finding_count, not just blocking_count. Keying the gate
-        # on blocking_count alone left a seam: an auditor with non-blocking
-        # haiku findings could be run at sonnet (or skip escalation entirely)
-        # and still pass, silently dropping the protocol-required opus shard.
+        # non-blocking nit at the cheap tier still warrants deep-tier
+        # confirmation — so the gate binds on finding_count, not just
+        # blocking_count. Keying the gate on blocking_count alone left a seam:
+        # an auditor with non-blocking cheap-tier findings could be run at the
+        # mid tier (or skip escalation entirely) and still pass, silently
+        # dropping the protocol-required deep-tier shard.
         all_voting_present = all(m in per_model for m in voting_models)
         if all_voting_present:
             all_clean = True

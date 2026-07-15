@@ -136,6 +136,9 @@ def test_denial_message_names_guardrail_role_path_and_docs(
 ) -> None:
     task_dir = tmp_path / ".dynos" / "task-20260611-001"
     task_dir.mkdir(parents=True)
+    # Non-terminal manifest so pre_tool_use keeps the DYNOS_TASK_DIR binding
+    # (a manifest-less/terminal task dir is ignored as stale).
+    (task_dir / "manifest.json").write_text(json.dumps({"stage": "EXECUTION"}))
     monkeypatch.setenv("DYNOS_ROLE", "planning")
     monkeypatch.setenv("DYNOS_TASK_DIR", str(task_dir))
     payload = {
@@ -158,6 +161,10 @@ def test_wrapper_required_denial_names_sanctioned_command(
 ) -> None:
     task_dir = tmp_path / ".dynos" / "task-20260611-002"
     task_dir.mkdir(parents=True)
+    # Non-terminal manifest so the task_dir binding is honoured; otherwise the
+    # write resolves as a cross-task control-plane write, not a wrapper-required
+    # one, and the sanctioned-command hint is never surfaced.
+    (task_dir / "manifest.json").write_text(json.dumps({"stage": "EXECUTION"}))
     monkeypatch.setenv("DYNOS_ROLE", "planning")
     monkeypatch.setenv("DYNOS_TASK_DIR", str(task_dir))
     payload = {

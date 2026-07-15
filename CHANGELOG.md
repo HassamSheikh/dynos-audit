@@ -11,6 +11,32 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.11] - 2026-07-15
+### Fixed
+- Project-root detection no longer treats the framework home (`~/.dynos` /
+  `$DYNOS_HOME`) or a stray orphan `.dynos` as a project control plane. The
+  `.dynos` name is overloaded — it is both the framework home and each
+  project's control plane — so the old bare-name ancestor walk resolved `$HOME`
+  (which always contains `~/.dynos`) as one giant project, pulling every
+  unrelated repository under it into governance and producing spurious
+  write-policy denials in folders that are not dynos projects. A new shared
+  discriminator (`hooks/lib_dynos_root.is_project_dynos_dir`) rejects the
+  framework home outright and requires a candidate `.dynos` to be a registered
+  project root (or to carry on-disk project state) before it can govern its
+  parent. Applied to every ancestor walk in `write_policy` and `pre_tool_use`,
+  and the out-of-scope write path now decides from the target location instead
+  of governing-when-unsure. Adds `tests/test_dynos_root_scope.py`.
+- Cleared six pre-existing red tests on `main`. Five were stale fixtures that
+  built task directories without a `manifest.json` and so were dropped by the
+  stale-binding hardening (7.5.10) before role/scope resolution ran; their
+  helpers now write a non-terminal manifest as a real task dir always would
+  (`test_role_file_fallback`, `test_bash_destination_extraction`). The sixth
+  was a genuine model-literal lint violation: an escalation comment in
+  `hooks/lib_core.py` named vendor model tiers directly; it now uses the
+  cheap/mid/deep-tier vocabulary already used elsewhere in the file.
+
+---
+
 ## [7.5.10] - 2026-06-23
 ### Fixed
 - Terminal task transitions now clear per-session task bindings, so a completed
