@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Run checkpoint audit, repair any findings, then reach DONE — all in one shot. Use after /dynos-work:execute."
+description: "Run checkpoint audit, repair any findings, then reach DONE — all in one shot. Runs only when the user explicitly types /dynos-work:audit; never auto-triggered from conversation."
 ---
 
 # dynos-work: Audit

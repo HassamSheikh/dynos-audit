@@ -1,6 +1,6 @@
 ---
 name: execution
-description: "Container for executor sub-agents. Each executor implements a segment from the execution graph."
+description: "Internal dynos-work executor skill group. Routes execution graph segments to the specialized executor skills. Invoked by /dynos-work:execute as part of the pipeline, or when the user explicitly types /dynos-work:execution; never auto-triggered from conversation."
 ---
 
 # dynos-work: Execution Container

@@ -75,7 +75,7 @@ print('. '.join(parts) if parts else 'defaults only')
 " 2>/dev/null || echo "defaults only")
 fi
 
-session_context="dynos-work active. Routing: ${ROUTING_SUMMARY:-defaults only}. IMPORTANT: For dynos-work execute and audit, run router.py to get deterministic model/skip/route decisions before spawning agents. Use dynos-work start for new tasks."
+session_context="dynos-work active. Routing: ${ROUTING_SUMMARY:-defaults only}. IMPORTANT: dynos-work commands are user-invoked only. Run one only when the user explicitly types its full namespaced form (/dynos-work:start, /dynos-work:resume, /dynos-work:audit, and so on). Never start, resume, audit, or otherwise enter the dynos-work pipeline on your own initiative, and do not treat a task-shaped request, a session restart, or words like 'resume' or 'status' as an invocation. When the user has explicitly invoked /dynos-work:execute or /dynos-work:audit, run router.py first for deterministic model/skip/route decisions before spawning agents."
 
 if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
   printf '{\n  "additional_context": "%s"\n}\n' "$session_context"

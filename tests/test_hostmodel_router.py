@@ -32,7 +32,10 @@ import lib_models  # noqa: E402  (production module — RED phase)
 
 # The full table from AC-2 spec.
 _CLAUDE_EXPECTED_MODELS = [
-    ("planning", "sonnet"),
+    # Promoted off the original AC-2 table to the frontier tier — see
+    # lib_models.ROLE_DEFAULT_TIERS. The byte-identical invariant below still
+    # holds for every role that has not been deliberately re-tiered.
+    ("planning", "fable"),
     ("spec-writer", "sonnet"),
     ("backend-executor", "sonnet"),
     ("ui-executor", "sonnet"),

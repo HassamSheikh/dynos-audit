@@ -1,5 +1,5 @@
 """
-Regression tests for debug-module/lib/run_tests.py _parse_dart — AC 14
+Regression tests for debug-module/debuglib/run_tests.py _parse_dart — AC 14
 (task-20260616-002, finding #69).
 
 The loose `_DART_PASS` / `_DART_FAIL` regexes (plus-digits / minus-digits) match
@@ -20,7 +20,7 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_run_tests():
     try:
-        from lib import run_tests
+        from debuglib import run_tests
         return run_tests
     except ModuleNotFoundError as exc:  # pragma: no cover
         pytest.fail(f"run_tests module not importable: {exc}")

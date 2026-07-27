@@ -1,6 +1,6 @@
 ---
 name: execute
-description: "Execute the approved plan. Orchestrates execution graph segments through specialized executor agents, including dependency management and error recovery."
+description: "Execute the approved plan. Orchestrates execution graph segments through specialized executor agents, including dependency management and error recovery. Runs only when the user explicitly types /dynos-work:execute; never auto-triggered from conversation."
 ---
 
 # dynos-work: Execute Skill

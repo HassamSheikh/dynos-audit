@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/run_semgrep.py — AC14.
+Tests for debug-module/debuglib/run_semgrep.py — AC14.
 """
 import json
 import sys
@@ -41,12 +41,12 @@ VALID_SEMGREP_JSON = {
 
 def _import_run_semgrep():
     try:
-        from lib import run_semgrep
+        from debuglib import run_semgrep
         return run_semgrep
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"run_semgrep module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/run_semgrep.py to make this test pass."
+            f"Implement debug-module/debuglib/run_semgrep.py to make this test pass."
         )
 
 

@@ -1,6 +1,6 @@
 ---
 name: list
-description: "Internal dynos-work skill. List all registered dynos-work projects."
+description: "Internal dynos-work skill. List all registered dynos-work projects. Runs only when the user explicitly types /dynos-work:list; never auto-triggered from conversation."
 ---
 
 # dynos-work: List

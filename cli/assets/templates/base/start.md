@@ -1,6 +1,6 @@
 ---
 name: start
-description: "Start a new task. Give it a description and it handles discovery, spec, plan, execution, and audit."
+description: "Start a new dynos-work task: handles discovery, spec, plan, execution, and audit. Runs only when the user explicitly types /dynos-work:start; never auto-triggered from conversation or by task-shaped requests."
 ---
 
 # dynos-work: Unified Foundry Start

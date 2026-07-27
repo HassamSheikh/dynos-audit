@@ -143,14 +143,16 @@ class TestEnsembleConfig:
         auditors, models, escalation = _load_ensemble_config({})
         assert auditors == _DEFAULT_ENSEMBLE_AUDITORS
         assert models == ["haiku", "sonnet"]
-        assert escalation == "opus"
+        # Escalation is the frontier tier: the voting arms decide the common
+        # case, and only a split spends a frontier spawn to break the tie.
+        assert escalation == "fable"
 
     def test_partial_config_fills_defaults(self):
         from router import _load_ensemble_config
         auditors, models, escalation = _load_ensemble_config({"ensemble_auditors": ["code-quality-auditor"]})
         assert auditors == {"code-quality-auditor"}
         assert models == ["haiku", "sonnet"]  # default
-        assert escalation == "opus"  # default
+        assert escalation == "fable"  # default (frontier tier)
 
 
 # ---------------------------------------------------------------------------

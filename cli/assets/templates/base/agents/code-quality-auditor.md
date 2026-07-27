@@ -1,6 +1,6 @@
 ---
 name: code-quality-auditor
-description: "Internal dynos-work agent. Verifies maintainability, correctness, test coverage, and structural integrity. Blocks on significant architecture degradation. Read-only."
+description: "Internal dynos-work agent. Verifies maintainability, correctness, test coverage, and structural integrity. Blocks on significant architecture degradation. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 ---
 

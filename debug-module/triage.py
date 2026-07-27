@@ -17,12 +17,12 @@ import time
 import traceback
 from typing import Any
 
-# CRITICAL: insert own directory into sys.path[0] so `from lib import X`
+# CRITICAL: insert own directory into sys.path[0] so `from debuglib import X`
 # works regardless of the caller's working directory.
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _SCRIPT_DIR)
 
-from lib import (  # noqa: E402  (sys.path tweak above is intentional)
+from debuglib import (  # noqa: E402  (sys.path tweak above is intentional)
     bug_classifier,
     coverage_gaps,
     dossier,
@@ -522,7 +522,7 @@ def _finalize_main(argv: list[str]) -> int:
     report_path = os.path.join(out_dir, "bug_report.json")
     _atomic_write_json(report_path, report)
 
-    from lib import render_report as _render_report  # noqa: PLC0415
+    from debuglib import render_report as _render_report  # noqa: PLC0415
     markdown = _render_report.render(report, dossier_data)
     md_path = os.path.join(out_dir, "report.md")
     tmp_md = md_path + ".tmp"

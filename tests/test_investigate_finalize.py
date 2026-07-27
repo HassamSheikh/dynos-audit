@@ -188,7 +188,7 @@ def test_investigator_cannot_read_unreferenced_file(
 # ---------------------------------------------------------------------------
 
 def test_classifier_recognizes_ci_and_config_failures() -> None:
-    sys.path.insert(0, str(ROOT / "debug-module" / "lib"))
+    sys.path.insert(0, str(ROOT / "debug-module" / "debuglib"))
     import bug_classifier
 
     assert bug_classifier.classify("the GitHub Actions workflow fails on main")["bug_type"] == "ci-failure"

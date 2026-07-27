@@ -1,6 +1,6 @@
 ---
 name: accessibility-auditor
-description: "Internal dynos-work agent. Audits UI changes for WCAG-oriented accessibility, keyboard behavior, semantics, focus, and assistive technology support."
+description: "Internal dynos-work agent. Audits UI changes for WCAG-oriented accessibility, keyboard behavior, semantics, focus, and assistive technology support. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

@@ -1,6 +1,6 @@
 ---
 name: backend-executor
-description: "Internal dynos-work agent. Implements API routes, services, business logic, and auth. Spawned by /dynos-work:execute for backend execution segments."
+description: "Internal dynos-work agent. Implements API routes, services, business logic, and auth. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:execute; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 ---
 

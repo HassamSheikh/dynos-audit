@@ -1,6 +1,6 @@
 ---
 name: memory
-description: "Internal dynos-work skill. Aggregate task retrospectives into project memory. Scans task-retrospective.json files, writes project_rules.md, computes effectiveness scores, derives Model Policy and Skip Policy, manages baselines. Runs automatically at task completion."
+description: "Internal dynos-work skill. Aggregate task retrospectives into project memory. Scans task-retrospective.json files, writes project_rules.md, computes effectiveness scores, derives Model Policy and Skip Policy, manages baselines. Invoked by the pipeline at task completion, or when the user explicitly types /dynos-work:memory; never auto-triggered from conversation or by memory-related requests."
 ---
 
 # dynos-work: Memory

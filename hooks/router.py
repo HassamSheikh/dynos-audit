@@ -48,6 +48,11 @@ from lib_models import (
     valid_models_for_host as _valid_models_for_host,
     ALL_TIERS as _ALL_TIERS,
     HOST_CLAUDE as _HOST_CLAUDE,
+    TIER_FRONTIER as _TIER_FRONTIER,
+    clamp_model_to_role_ceiling as _clamp_model_to_role_ceiling,
+    max_tier_for_role as _max_tier_for_role,
+    model_rank as _model_rank,
+    tier_rank as _tier_rank,
 )
 from lib_host import detect_host as _detect_host
 from lib_log import log_event
@@ -188,6 +193,22 @@ def _default_model_for_role(role: str, host: str) -> str | None:
     """
     tier = _ROLE_DEFAULT_TIERS.get(role, _TIER_BALANCED)
     return _resolve_model_for_tier(host, tier)
+
+
+def _explorable_models_for_role(role: str, host: str = _HOST_CLAUDE) -> list[str]:
+    """Return the epsilon-greedy exploration arms permitted for *role*.
+
+    Excludes models above the role's tier ceiling and the security floor
+    model. Sorted so the arm list is deterministic across processes —
+    ``random.choice`` over a set iteration order is not reproducible.
+    """
+    ceiling_rank = _tier_rank(_max_tier_for_role(role))
+    floor_model = _resolve_model_for_tier(_HOST_CLAUDE, _TIER_DEEP)
+    return sorted(
+        m
+        for m in _valid_models_for_host(host)
+        if m != floor_model and _model_rank(m) <= ceiling_rank
+    )
 
 
 def _build_ensemble_context(host: str) -> dict:
@@ -476,14 +497,19 @@ def _benchmark_model_for_agent(root: Path, role: str, task_type: str, ctx: Route
     }
 
 
-def resolve_model(
+def _resolve_model_uncapped(
     root: Path,
     role: str,
     task_type: str,
     ctx: RouterContext | None = None,
     host: str | None = None,
 ) -> dict:
-    """Determine which model an agent should use.
+    """Determine which model an agent should use, before ceiling enforcement.
+
+    Callers want ``resolve_model``, which wraps this with the role tier
+    ceiling. This inner function exists so that every one of the selection
+    paths below funnels through exactly one enforcement point, rather than
+    each return site having to remember to clamp.
 
     Priority order:
       0.  Epsilon-greedy exploration       -> source: "exploration"
@@ -554,7 +580,13 @@ def resolve_model(
         and (ctx.learning_enabled if ctx else is_learning_enabled(root))
         and random.random() < epsilon
     ):
-        model = random.choice([m for m in VALID_MODELS if m != _security_floor_model])
+        # Exploration arms are bounded by the role's tier ceiling. Drawing an
+        # above-ceiling arm and clamping it afterwards would burn the draw and
+        # write a duplicate observation for the ceiling model instead.
+        _arms = _explorable_models_for_role(role)
+        if not _arms:
+            _arms = [m for m in VALID_MODELS if m != _security_floor_model]
+        model = random.choice(_arms)
         result = {"model": model, "source": "exploration", "epsilon": epsilon}
         log_event(root, "router_model_decision", role=role, task_type=task_type, model=model, source="exploration")
         return result
@@ -575,8 +607,13 @@ def resolve_model(
                 all_scores = []
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             all_scores = []
+    # Below-floor is a rank comparison, not an inequality against the deep-tier
+    # literal. With a tier above deep in the ladder, `m != <deep model>` would
+    # classify the frontier model as below-floor and downgrade
+    # security-auditor from frontier back to deep.
+    _floor_rank = _tier_rank(_TIER_DEEP)
     _non_floor_claude_models = {
-        m for m in _valid_models_for_host(_HOST_CLAUDE) if m != _security_floor_model
+        m for m in _valid_models_for_host(_HOST_CLAUDE) if _model_rank(m) < _floor_rank
     }
     if all_scores:
         candidates = _filter_effectiveness_scores(all_scores, role, task_type)
@@ -631,6 +668,53 @@ def resolve_model(
 
     result = {"model": _default_model_for_role(role, _HOST_CLAUDE), "source": "default"}
     log_event(root, "router_model_decision", role=role, task_type=task_type, model=result["model"], source=result["source"])
+    return result
+
+
+def resolve_model(
+    root: Path,
+    role: str,
+    task_type: str,
+    ctx: RouterContext | None = None,
+    host: str | None = None,
+) -> dict:
+    """Determine which model an agent should use, capped at the role ceiling.
+
+    Thin wrapper over ``_resolve_model_uncapped``. Every selection path —
+    explicit policy override, exploration, UCB, benchmark, learned history,
+    default — passes through here, so no path can hand a role a model above
+    the tier ceiling declared in lib_models.ROLE_TIER_CEILINGS. In practice
+    this is what keeps the frontier tier off executor roles even when a
+    project's policy.json or learned effectiveness data asks for it.
+
+    When a clamp fires, ``source`` is suffixed with ``+tier_ceiling`` and the
+    pre-clamp value is preserved on ``uncapped_model`` so receipts still show
+    what the selector actually wanted.
+    """
+    result = _resolve_model_uncapped(root, role, task_type, ctx=ctx, host=host)
+    if not isinstance(result, dict):
+        return result
+
+    selected = result.get("model")
+    capped = _clamp_model_to_role_ceiling(role, selected, _HOST_CLAUDE)
+    if capped == selected:
+        return result
+
+    result["uncapped_model"] = selected
+    result["model"] = capped
+    if "resolved_model" in result:
+        result["resolved_model"] = capped
+    result["tier_ceiling"] = _max_tier_for_role(role)
+    result["source"] = f"{result.get('source', 'unknown')}+tier_ceiling"
+    log_event(
+        root,
+        "router_model_ceiling_clamp",
+        role=role,
+        task_type=task_type,
+        requested_model=selected,
+        model=capped,
+        tier_ceiling=result["tier_ceiling"],
+    )
     return result
 
 
@@ -891,7 +975,16 @@ _DEFAULT_ENSEMBLE_VOTING_MODELS = [
     _resolve_model_for_tier(_HOST_CLAUDE, "fast"),
     _resolve_model_for_tier(_HOST_CLAUDE, "balanced"),
 ]
-_DEFAULT_ENSEMBLE_ESCALATION_MODEL = _resolve_model_for_tier(_HOST_CLAUDE, "deep")
+# Ensemble escalation is the one path that puts the frontier tier in front of
+# auditors: the fast/balanced arms vote first, and only a disagreement spends a
+# frontier spawn to break the tie. Auditors keep their ROLE_DEFAULT_TIERS
+# defaults, so a clean first pass never pays for it. Falls back to the deep
+# tier on hosts with no frontier mapping (e.g. codex resolves both to None,
+# which _build_escalation_result already reports as escalation_unavailable).
+_DEFAULT_ENSEMBLE_ESCALATION_MODEL = (
+    _resolve_model_for_tier(_HOST_CLAUDE, _TIER_FRONTIER)
+    or _resolve_model_for_tier(_HOST_CLAUDE, _TIER_DEEP)
+)
 
 # Default auditor registry — overridable via .dynos/config/auditors.json
 _DEFAULT_AUDITOR_REGISTRY = {

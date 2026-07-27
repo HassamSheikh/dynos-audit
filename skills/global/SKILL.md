@@ -1,6 +1,6 @@
 ---
 name: global
-description: "Internal dynos-work skill. Manage the global cross-project sweeper daemon."
+description: "Internal dynos-work skill. Manage the global cross-project sweeper daemon. Runs only when the user explicitly types /dynos-work:global; never auto-triggered from conversation."
 ---
 
 # dynos-work: Global

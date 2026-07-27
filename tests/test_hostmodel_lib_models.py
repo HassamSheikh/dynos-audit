@@ -31,20 +31,35 @@ import lib_models  # noqa: E402  (production module to be created — RED phase)
 
 class TestLibModelsTierConstants:
     def test_lib_models_tier_constants(self) -> None:
-        """AC-3: ALL_TIERS == ['fast', 'balanced', 'deep'] ordered, as a list."""
+        """AC-3: ALL_TIERS is the ordered tier ladder, as a list."""
         assert lib_models.TIER_FAST == "fast"
         assert lib_models.TIER_BALANCED == "balanced"
         assert lib_models.TIER_DEEP == "deep"
-        assert lib_models.ALL_TIERS == ["fast", "balanced", "deep"]
+        assert lib_models.TIER_FRONTIER == "frontier"
+        assert lib_models.ALL_TIERS == ["fast", "balanced", "deep", "frontier"]
         assert isinstance(lib_models.ALL_TIERS, list), "ALL_TIERS must be a list, not a set"
 
     def test_all_tiers_ordering(self) -> None:
-        """AC-3: ALL_TIERS must be ordered fast→balanced→deep."""
+        """AC-3: ALL_TIERS must be ordered fast→balanced→deep→frontier."""
         tiers = lib_models.ALL_TIERS
         assert tiers[0] == "fast"
         assert tiers[1] == "balanced"
         assert tiers[2] == "deep"
-        assert len(tiers) == 3
+        assert tiers[3] == "frontier"
+        assert len(tiers) == 4
+
+    def test_tier_rank_matches_all_tiers_order(self) -> None:
+        """TIER_RANK must agree with ALL_TIERS ordering, with no gaps.
+
+        Every rank comparison in the codebase (security floor, ceiling
+        clamp, circuit-breaker predicate) reads TIER_RANK, so a rank that
+        disagrees with the declared ladder order would invert those checks
+        silently.
+        """
+        assert set(lib_models.TIER_RANK) == set(lib_models.ALL_TIERS)
+        ranks = [lib_models.TIER_RANK[t] for t in lib_models.ALL_TIERS]
+        assert ranks == sorted(ranks), "TIER_RANK must ascend in ALL_TIERS order"
+        assert ranks == list(range(len(lib_models.ALL_TIERS))), "ranks must be 0..n-1"
 
     def test_host_constants(self) -> None:
         """AC-3: HOST_CLAUDE, HOST_CODEX, ALL_HOSTS must have correct values."""
@@ -129,7 +144,7 @@ class TestLibModelsValidModelsForHost:
     def test_lib_models_valid_models_for_host(self) -> None:
         """AC-3: valid_models_for_host returns correct frozensets."""
         claude_valid = lib_models.valid_models_for_host("claude")
-        assert claude_valid == frozenset({"haiku", "sonnet", "opus"})
+        assert claude_valid == frozenset({"haiku", "sonnet", "opus", "fable"})
         assert isinstance(claude_valid, frozenset)
 
         codex_valid = lib_models.valid_models_for_host("codex")
@@ -155,7 +170,9 @@ class TestLibModelsValidModelsForHost:
 # Runtime roles and their expected default tiers. Keep this aligned with
 # agents/*-{executor,auditor}.md plus the planner/spec writer roles.
 _EXPECTED_ROLE_TIERS = {
-    "planning": "balanced",
+    # Deliberately promoted past its original balanced tier: plan quality
+    # determines the cost of every downstream executor spawn.
+    "planning": "frontier",
     "spec-writer": "balanced",
     "backend-executor": "balanced",
     "ui-executor": "balanced",
@@ -236,8 +253,14 @@ class TestRoleDefaultTiersComplete:
                 f"Role {role!r} mapped to haiku should map to TIER_FAST, got {rdt[role]!r}"
             )
 
-        # Roles that mapped to "sonnet" in ROLE_DEFAULT_MODELS must now be TIER_BALANCED.
-        sonnet_roles = {r for r, m in _ORIGINAL_ROLE_DEFAULT_MODELS.items() if m == "sonnet"}
+        # Roles that mapped to "sonnet" in ROLE_DEFAULT_MODELS must now be
+        # TIER_BALANCED — except roles deliberately re-tiered since the
+        # original migration, which _EXPECTED_ROLE_TIERS pins explicitly.
+        _RETIERED_SINCE_MIGRATION = {"planning"}
+        sonnet_roles = {
+            r for r, m in _ORIGINAL_ROLE_DEFAULT_MODELS.items()
+            if m == "sonnet" and r not in _RETIERED_SINCE_MIGRATION
+        }
         for role in sonnet_roles:
             assert rdt[role] == lib_models.TIER_BALANCED, (
                 f"Role {role!r} mapped to sonnet should map to TIER_BALANCED, got {rdt[role]!r}"

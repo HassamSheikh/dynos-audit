@@ -1,6 +1,6 @@
 ---
 name: calibration
-description: "Internal dynos-work skill. Agent calibration — generates project-specific agents, benchmarks them, promotes/demotes based on performance, and manages auditor mode transitions."
+description: "Internal dynos-work skill. Agent calibration — generates project-specific agents, benchmarks them, promotes/demotes based on performance, and manages auditor mode transitions. Runs only when the user explicitly types /dynos-work:calibration; never auto-triggered from conversation."
 ---
 
 # dynos-work: Evolve

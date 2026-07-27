@@ -1,6 +1,6 @@
 ---
 name: residual
-description: "Inspect and drain the proactive-residual queue at .dynos/proactive-findings.json. Subcommands: list, run-next."
+description: "Inspect and drain the proactive-residual queue at .dynos/proactive-findings.json. Subcommands: list, run-next. Runs only when the user explicitly types /dynos-work:residual; never auto-triggered from conversation."
 ---
 
 # dynos-work: Residual

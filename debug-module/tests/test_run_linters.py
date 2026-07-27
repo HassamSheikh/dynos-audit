@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/run_linters.py — AC13.
+Tests for debug-module/debuglib/run_linters.py — AC13.
 """
 import sys
 from pathlib import Path
@@ -13,12 +13,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_run_linters():
     try:
-        from lib import run_linters
+        from debuglib import run_linters
         return run_linters
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"run_linters module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/run_linters.py to make this test pass."
+            f"Implement debug-module/debuglib/run_linters.py to make this test pass."
         )
 
 

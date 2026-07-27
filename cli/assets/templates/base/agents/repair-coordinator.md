@@ -1,6 +1,6 @@
 ---
 name: repair-coordinator
-description: "Legacy reference only. The main audit loop now builds repair-log.json and repair batches deterministically in ctl.py."
+description: "Legacy reference only. The main audit loop now builds repair-log.json and repair batches deterministically in ctl.py. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 ---
 

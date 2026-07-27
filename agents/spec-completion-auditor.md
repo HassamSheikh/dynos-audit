@@ -1,6 +1,6 @@
 ---
 name: spec-completion-auditor
-description: "Internal dynos-work agent. Verifies every acceptance criterion is met with evidence. Runs on every task. Always blocks completion. Writes only its own audit-report."
+description: "Internal dynos-work agent. Verifies every acceptance criterion is met with evidence. Runs on every task. Always blocks completion. Writes only its own audit-report. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Write]
 maxTurns: 20

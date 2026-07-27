@@ -7,7 +7,7 @@ WARNING line for every cited evidence ID that is missing from
 — it warns inline and renders the rest of the report.
 
 CLI form:
-    python3 debug-module/lib/render_report.py \
+    python3 debug-module/debuglib/render_report.py \
         --report  <path-to-bug-report.json> \
         --dossier <path-to-dossier.json>
 

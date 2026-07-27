@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/log_surface.py — AC16.
+Tests for debug-module/debuglib/log_surface.py — AC16.
 """
 import sys
 from pathlib import Path
@@ -13,12 +13,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_log_surface():
     try:
-        from lib import log_surface
+        from debuglib import log_surface
         return log_surface
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"log_surface module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/log_surface.py to make this test pass."
+            f"Implement debug-module/debuglib/log_surface.py to make this test pass."
         )
 
 

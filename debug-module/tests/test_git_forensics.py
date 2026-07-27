@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/git_forensics.py — AC15.
+Tests for debug-module/debuglib/git_forensics.py — AC15.
 """
 import sys
 from pathlib import Path
@@ -15,12 +15,12 @@ REPO_ROOT = str(Path(__file__).parent.parent.parent)
 
 def _import_git_forensics():
     try:
-        from lib import git_forensics
+        from debuglib import git_forensics
         return git_forensics
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"git_forensics module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/git_forensics.py to make this test pass."
+            f"Implement debug-module/debuglib/git_forensics.py to make this test pass."
         )
 
 

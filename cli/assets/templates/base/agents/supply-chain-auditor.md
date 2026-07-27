@@ -1,6 +1,6 @@
 ---
 name: supply-chain-auditor
-description: "Internal dynos-work agent. Audits dependency, lockfile, build provenance, package script, and generated-artifact risk."
+description: "Internal dynos-work agent. Audits dependency, lockfile, build provenance, package script, and generated-artifact risk. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: opus
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

@@ -1,6 +1,6 @@
 ---
 name: security-auditor
-description: "Internal dynos-work agent. Adversarial security review and compliance audit of all changed code. Runs on every task. Always blocks completion. Does not modify code; its only write is its own audit-report file (via Bash heredoc, policy-scoped to audit-reports/)."
+description: "Internal dynos-work agent. Adversarial security review and compliance audit of all changed code. Runs on every task. Always blocks completion. Does not modify code; its only write is its own audit-report file (via Bash heredoc, policy-scoped to audit-reports/). Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: opus
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

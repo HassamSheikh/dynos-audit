@@ -1,6 +1,6 @@
 ---
 name: data-integrity-auditor
-description: "Internal dynos-work agent. Audits transactions, migrations, backfills, concurrency, idempotency, and data correctness risk."
+description: "Internal dynos-work agent. Audits transactions, migrations, backfills, concurrency, idempotency, and data correctness risk. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

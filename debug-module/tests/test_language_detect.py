@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/language_detect.py — AC10.
+Tests for debug-module/debuglib/language_detect.py — AC10.
 """
 import sys
 from pathlib import Path
@@ -13,12 +13,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_language_detect():
     try:
-        from lib import language_detect
+        from debuglib import language_detect
         return language_detect
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"language_detect module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/language_detect.py to make this test pass."
+            f"Implement debug-module/debuglib/language_detect.py to make this test pass."
         )
 
 

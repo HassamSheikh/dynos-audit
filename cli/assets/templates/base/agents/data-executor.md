@@ -1,6 +1,6 @@
 ---
 name: data-executor
-description: "Internal dynos-work agent. Implements data pipelines, backfills, ETL, analytics, reconciliation, and data quality changes."
+description: "Internal dynos-work agent. Implements data pipelines, backfills, ETL, analytics, reconciliation, and data quality changes. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:execute; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 maxTurns: 40

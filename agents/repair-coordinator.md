@@ -1,6 +1,6 @@
 ---
 name: repair-coordinator
-description: "Internal dynos-work agent. Converts audit findings into precise remediation tasks. Produces a repair-log payload and persists repair-log.json via ctl wrapper."
+description: "Internal dynos-work agent. Converts audit findings into precise remediation tasks. Produces a repair-log payload and persists repair-log.json via ctl wrapper. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob]
 maxTurns: 20

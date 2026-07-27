@@ -1,6 +1,6 @@
 ---
 name: db-schema-auditor
-description: "Internal dynos-work agent. Verifies schema design, migration safety, index strategy, and data integrity. Blocks on DB tasks. Read-only."
+description: "Internal dynos-work agent. Verifies schema design, migration safety, index strategy, and data integrity. Blocks on DB tasks. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: haiku
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

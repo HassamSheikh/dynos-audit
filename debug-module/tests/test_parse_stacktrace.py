@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/parse_stacktrace.py — AC11.
+Tests for debug-module/debuglib/parse_stacktrace.py — AC11.
 """
 import sys
 from pathlib import Path
@@ -40,12 +40,12 @@ Exception in thread "main" java.lang.NullPointerException
 
 def _import_parse_stacktrace():
     try:
-        from lib import parse_stacktrace
+        from debuglib import parse_stacktrace
         return parse_stacktrace
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"parse_stacktrace module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/parse_stacktrace.py to make this test pass."
+            f"Implement debug-module/debuglib/parse_stacktrace.py to make this test pass."
         )
 
 
