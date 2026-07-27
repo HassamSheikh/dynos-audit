@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/bug_classifier.py — AC9.
+Tests for debug-module/debuglib/bug_classifier.py — AC9.
 
 Every test maps to exactly one behaviour specified in AC9.
 """
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-# Ensure debug-module/ is on sys.path so 'from lib import ...' works
+# Ensure debug-module/ is on sys.path so 'from debuglib import ...' works
 _DEBUG_MODULE_DIR = str(Path(__file__).parent.parent)
 if _DEBUG_MODULE_DIR not in sys.path:
     sys.path.insert(0, _DEBUG_MODULE_DIR)
@@ -17,12 +17,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 def _import_classifier():
     """Import bug_classifier, failing the test clearly if not yet implemented."""
     try:
-        from lib import bug_classifier
+        from debuglib import bug_classifier
         return bug_classifier
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"bug_classifier module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/bug_classifier.py to make this test pass."
+            f"Implement debug-module/debuglib/bug_classifier.py to make this test pass."
         )
 
 
@@ -159,7 +159,7 @@ def test_ac9_bug_type_is_always_from_allowed_set():
 # ---------------------------------------------------------------------------
 
 _BUG_CLASSIFIER_SRC = (
-    Path(__file__).parent.parent / "lib" / "bug_classifier.py"
+    Path(__file__).parent.parent / "debuglib" / "bug_classifier.py"
 ).read_text(encoding="utf-8")
 
 

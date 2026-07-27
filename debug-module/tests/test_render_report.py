@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/render_report.py — AC19, AC20.
+Tests for debug-module/debuglib/render_report.py — AC19, AC20.
 """
 import json
 import subprocess
@@ -13,17 +13,17 @@ _DEBUG_MODULE_DIR = str(Path(__file__).parent.parent)
 if _DEBUG_MODULE_DIR not in sys.path:
     sys.path.insert(0, _DEBUG_MODULE_DIR)
 
-RENDER_REPORT_SCRIPT = str(Path(__file__).parent.parent / "lib" / "render_report.py")
+RENDER_REPORT_SCRIPT = str(Path(__file__).parent.parent / "debuglib" / "render_report.py")
 
 
 def _import_render_report():
     try:
-        from lib import render_report
+        from debuglib import render_report
         return render_report
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"render_report module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/render_report.py to make this test pass."
+            f"Implement debug-module/debuglib/render_report.py to make this test pass."
         )
 
 

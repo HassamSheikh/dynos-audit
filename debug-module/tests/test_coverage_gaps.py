@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/coverage_gaps.py — AC12.
+Tests for debug-module/debuglib/coverage_gaps.py — AC12.
 """
 import json
 import sys
@@ -14,12 +14,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_coverage_gaps():
     try:
-        from lib import coverage_gaps
+        from debuglib import coverage_gaps
         return coverage_gaps
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"coverage_gaps module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/coverage_gaps.py to make this test pass."
+            f"Implement debug-module/debuglib/coverage_gaps.py to make this test pass."
         )
 
 

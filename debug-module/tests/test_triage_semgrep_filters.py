@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-# Ensure debug-module/ is on sys.path so 'import triage' and 'from lib import ...' work.
+# Ensure debug-module/ is on sys.path so 'import triage' and 'from debuglib import ...' work.
 _DEBUG_MODULE_DIR = str(Path(__file__).parent.parent)
 if _DEBUG_MODULE_DIR not in sys.path:
     sys.path.insert(0, _DEBUG_MODULE_DIR)
@@ -34,7 +34,7 @@ def _import_triage():
 
 def _import_run_semgrep():
     try:
-        from lib import run_semgrep
+        from debuglib import run_semgrep
         return run_semgrep
     except ModuleNotFoundError as exc:  # pragma: no cover
         pytest.fail(f"run_semgrep module not importable: {exc}")

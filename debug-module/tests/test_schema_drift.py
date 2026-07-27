@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/schema_drift.py — AC17.
+Tests for debug-module/debuglib/schema_drift.py — AC17.
 """
 import sys
 from pathlib import Path
@@ -13,12 +13,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_schema_drift():
     try:
-        from lib import schema_drift
+        from debuglib import schema_drift
         return schema_drift
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"schema_drift module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/schema_drift.py to make this test pass."
+            f"Implement debug-module/debuglib/schema_drift.py to make this test pass."
         )
 
 

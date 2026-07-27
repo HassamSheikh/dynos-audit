@@ -11,6 +11,34 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.17] - 2026-07-27
+### Fixed
+- `pytest tests/ debug-module/tests/` in a single process no longer fails.
+  124 debug-module tests were erroring with
+  `ImportError: cannot import name ... from 'lib'`.
+- Cause was a top-level module name collision, not test pollution:
+  `hooks/lib.py` (a re-export facade) and `debug-module/lib/` (a package)
+  shared the name `lib`. Both roots land on `sys.path` during a combined
+  run, and Python caches by name rather than by path — so once any `tests/`
+  case imported `lib`, `sys.modules["lib"]` was pinned to the facade and
+  every debug-module `from lib import <step>` resolved against the wrong
+  module. Either suite alone was unaffected, which is why it went unnoticed.
+- debug-module's internal package is renamed `lib` -> `debuglib` (42
+  references across 15 files). `hooks/lib.py` is untouched: it is a
+  backwards-compat facade whose whole purpose is that `import lib` keeps
+  working, so it is the wrong side to rename.
+
+### Added
+- Guard test (`tests/test_import_root_collisions.py`) asserting no two
+  import roots (`hooks/`, `memory/`, `debug-module/`) expose the same
+  top-level module name. Five pre-existing `hooks` <-> `memory` collisions
+  (`agent_generator`, `lib_qlearn`, `postmortem`, `postmortem_analysis`,
+  `postmortem_improve`) are frozen in a documented allowlist — they are
+  latent rather than active, since `hooks/` wins the path order and nothing
+  needs the `memory/` copy under those names — so a sixth fails the build.
+
+---
+
 ## [7.5.16] - 2026-07-27
 ### Fixed
 - dynos-work commands no longer fire without the user typing them.

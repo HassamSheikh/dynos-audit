@@ -1,5 +1,5 @@
 """
-Tests for debug-module/lib/dossier.py — AC18.
+Tests for debug-module/debuglib/dossier.py — AC18.
 """
 import sys
 from pathlib import Path
@@ -13,12 +13,12 @@ if _DEBUG_MODULE_DIR not in sys.path:
 
 def _import_dossier():
     try:
-        from lib import dossier
+        from debuglib import dossier
         return dossier
     except ModuleNotFoundError as exc:
         pytest.fail(
             f"dossier module not yet implemented: {exc}\n"
-            f"Implement debug-module/lib/dossier.py to make this test pass."
+            f"Implement debug-module/debuglib/dossier.py to make this test pass."
         )
 
 
