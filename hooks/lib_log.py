@@ -51,6 +51,7 @@ DIAGNOSTIC_ONLY_EVENTS: frozenset[str] = frozenset({
     "router_audit_plan",
     "router_executor_plan",
     "router_model_decision",
+    "router_model_ceiling_clamp",
     "router_route_decision",
     "plan_audit_skipped_by_risk",
     "planner_spawn_zero_tokens",

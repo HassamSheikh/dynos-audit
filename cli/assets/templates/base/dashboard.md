@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: "Internal dynos-work skill. Start the global dashboard server showing all registered projects."
+description: "Internal dynos-work skill. Start the SPA dashboard server showing all registered projects. Runs only when the user explicitly types /dynos-work:dashboard; never auto-triggered from conversation."
 ---
 
 # dynos-work: Dashboard

@@ -1,6 +1,6 @@
 ---
 name: founder
-description: "Internal dynos-work skill. Foundry strategic design-review service. Uses sandbox simulations and targeted checks to vet high-risk architecture options before human approval."
+description: "Internal dynos-work skill. Foundry strategic design-review service. Uses sandbox simulations and targeted checks to vet high-risk architecture options before human approval. Runs only when the user explicitly types /dynos-work:founder; never auto-triggered from conversation."
 ---
 
 # dynos-work: Founder (Design Review Engine)

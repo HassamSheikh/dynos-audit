@@ -68,11 +68,19 @@ from lib_defaults import (
 COMPOSITE_WEIGHTS = (ROUTER_WEIGHT_QUALITY, ROUTER_WEIGHT_COST, ROUTER_WEIGHT_EFFICIENCY)
 # RN-6: keys are tier names (fast/balanced/deep) — model literals moved to lib_models.
 # IR-1: callers use MODEL_COST_ORDER.get(model_or_tier, 99) — tier names sort correctly.
-from lib_models import TIER_FAST as _TIER_FAST, TIER_BALANCED as _TIER_BALANCED, TIER_DEEP as _TIER_DEEP
+from lib_models import (
+    TIER_FAST as _TIER_FAST,
+    TIER_BALANCED as _TIER_BALANCED,
+    TIER_DEEP as _TIER_DEEP,
+    TIER_FRONTIER as _TIER_FRONTIER,
+    model_rank as _model_rank,
+    tier_rank as _tier_rank,
+)
 MODEL_COST_ORDER: dict[str, int] = {
     _TIER_FAST: 0,
     _TIER_BALANCED: 1,
     _TIER_DEEP: 2,
+    _TIER_FRONTIER: 3,
 }
 # Backwards compat aliases
 COLD_START_MINIMUM = EMA_COLD_START_MINIMUM
@@ -495,8 +503,10 @@ def derive_model_policy(effectiveness_scores: list[dict]) -> dict[str, dict]:
         winner = candidates[0]
         model = winner["model"]
 
-        # Monotonicity: security-auditor always TIER_DEEP
-        if role == "security-auditor" and model != _TIER_DEEP:
+        # Monotonicity: security-auditor never below TIER_DEEP. This is a
+        # floor, not a pin — a rank comparison so that a frontier-tier winner
+        # survives instead of being downgraded to deep by an equality check.
+        if role == "security-auditor" and _model_rank(model) < _tier_rank(_TIER_DEEP):
             model = _TIER_DEEP
 
         # Confidence

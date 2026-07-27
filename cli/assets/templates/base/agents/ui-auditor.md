@@ -1,6 +1,6 @@
 ---
 name: ui-auditor
-description: "Internal dynos-work agent. Verifies UI correctness, completeness, accessibility, and all states. Blocks on UI tasks. Read-only."
+description: "Internal dynos-work agent. Verifies UI correctness, completeness, accessibility, and all states. Blocks on UI tasks. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 ---
 

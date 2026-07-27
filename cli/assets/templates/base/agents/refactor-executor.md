@@ -1,6 +1,6 @@
 ---
 name: refactor-executor
-description: "Internal dynos-work agent. Restructures code without changing behavior. No new features. Spawned by /dynos-work:execute for refactor execution segments."
+description: "Internal dynos-work agent. Restructures code without changing behavior. No new features. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:execute; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 ---
 

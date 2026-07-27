@@ -1,6 +1,6 @@
 ---
 name: planning
-description: "Internal dynos-work agent. Planner — handles discovery+design+classification, spec normalization, implementation plan + execution graph generation. Spawned by /dynos-work:start."
+description: "Internal dynos-work agent. Planner — handles discovery+design+classification, spec normalization, implementation plan + execution graph generation. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:start; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: {{MODEL}}
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 ---

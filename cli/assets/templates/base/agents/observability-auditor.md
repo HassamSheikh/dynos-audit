@@ -1,6 +1,6 @@
 ---
 name: observability-auditor
-description: "Internal dynos-work agent. Audits logging, metrics, tracing, alerting, and debuggability for changed runtime paths."
+description: "Internal dynos-work agent. Audits logging, metrics, tracing, alerting, and debuggability for changed runtime paths. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

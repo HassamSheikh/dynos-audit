@@ -1,6 +1,6 @@
 ---
 name: release-auditor
-description: "Internal dynos-work agent. Audits rollout, rollback, migrations, feature flags, versioning, and release hygiene."
+description: "Internal dynos-work agent. Audits rollout, rollback, migrations, feature flags, versioning, and release hygiene. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

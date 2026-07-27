@@ -1,6 +1,6 @@
 ---
 name: trajectory
-description: "Internal dynos-work skill. Sequence memory manager. Stores compact task traces and retrieves similar prior tasks to inform discovery and design review."
+description: "Internal dynos-work skill. Sequence memory manager. Stores compact task traces and retrieves similar prior tasks to inform discovery and design review. Runs only when the user explicitly types /dynos-work:trajectory; never auto-triggered from conversation."
 ---
 
 # dynos-work: Trajectory (Sequence Memory)

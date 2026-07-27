@@ -1,6 +1,6 @@
 ---
 name: state-encoder
-description: "High-Dimensional State Encoding Agent. Converts a module's current code graph and recent finding density into a structured state signature."
+description: "High-Dimensional State Encoding Agent. Converts a module's current code graph and recent finding density into a structured state signature. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:start; never spawn this agent directly, from conversation, or outside a dynos-work task."
 ---
 
 # State-Encoder Agent ($)

@@ -1,6 +1,6 @@
 ---
 name: register
-description: "Internal dynos-work skill. Register the current project directory with the dynos-work global registry. Works from any project."
+description: "Internal dynos-work skill. Register the current project directory with the dynos-work global registry. Works from any project. Runs only when the user explicitly types /dynos-work:register; never auto-triggered from conversation."
 ---
 
 # dynos-work: Register

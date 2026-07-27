@@ -1,6 +1,6 @@
 ---
 name: resume
-description: "Resume an interrupted task from .dynos/ state. Use after session restart or context compression."
+description: "Resume an interrupted dynos-work task from .dynos/ state. Runs only when the user explicitly types /dynos-work:resume; never auto-triggered from conversation, by session restart, by context compression, or by the word 'resume' appearing in a request."
 ---
 
 # dynos-work: Resume

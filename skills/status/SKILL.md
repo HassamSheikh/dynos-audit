@@ -1,6 +1,6 @@
 ---
 name: status
-description: "Show current task state, lifecycle stage, audit results, and open gaps."
+description: "Show current dynos-work task state, lifecycle stage, audit results, and open gaps. Runs only when the user explicitly types /dynos-work:status; never auto-triggered from conversation or by questions about status."
 ---
 
 # dynos-work: Status

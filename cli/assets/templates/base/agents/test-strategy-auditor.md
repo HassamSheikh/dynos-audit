@@ -1,6 +1,6 @@
 ---
 name: test-strategy-auditor
-description: "Internal dynos-work agent. Audits whether the test suite proves the acceptance criteria at the right granularity."
+description: "Internal dynos-work agent. Audits whether the test suite proves the acceptance criteria at the right granularity. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 20

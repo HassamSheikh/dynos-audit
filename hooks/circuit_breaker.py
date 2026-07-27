@@ -67,12 +67,30 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from lib_models import resolve_model_for_tier, TIER_DEEP  # noqa: E402
+    from lib_models import (  # noqa: E402
+        resolve_model_for_tier,
+        TIER_DEEP,
+        model_rank,
+        tier_rank,
+    )
 except ImportError:  # pragma: no cover — only fails in unusual environments
     def resolve_model_for_tier(host: str, tier: str) -> Optional[str]:  # type: ignore[misc]
         """Fallback: treat any unknown host as claude-like (opus for deep tier)."""  # noqa: model-literal
-        _FALLBACK = {"fast": "haiku", "balanced": "sonnet", "deep": "opus"}  # noqa: model-literal
+        _FALLBACK = {"fast": "haiku", "balanced": "sonnet", "deep": "opus", "frontier": "fable"}  # noqa: model-literal
         return _FALLBACK.get(tier)
+
+    _FALLBACK_RANK = {"fast": 0, "balanced": 1, "deep": 2, "frontier": 3}
+    _FALLBACK_MODEL_TIER = {"haiku": "fast", "sonnet": "balanced", "opus": "deep", "fable": "frontier"}  # noqa: model-literal
+
+    def tier_rank(tier: Optional[str]) -> int:  # type: ignore[misc]
+        return _FALLBACK_RANK.get(tier, -1) if tier is not None else -1
+
+    def model_rank(model: Optional[str]) -> int:  # type: ignore[misc]
+        if model is None:
+            return -1
+        if model in _FALLBACK_RANK:
+            return _FALLBACK_RANK[model]
+        return _FALLBACK_RANK.get(_FALLBACK_MODEL_TIER.get(model, ""), -1)
 
     TIER_DEEP: str = "deep"  # type: ignore[assignment]
 
@@ -328,9 +346,18 @@ def _deep_tier_zero_yield_count(
                 continue
             if event.get("type") != "spawn":
                 continue
-        # AC-15: predicate is host-aware — compare against the deep-tier model
-        # for this host (e.g. "opus" for claude, None for codex).  # noqa: model-literal
-        if resolve_model_for_tier(host, TIER_DEEP) != event.get("model"):
+        # AC-15: predicate is host-aware — count spawns at the deep tier *or
+        # above*, not only those equal to the deep-tier literal. An auditor
+        # escalated to the frontier tier is still a deep-tier-or-better spawn
+        # returning nothing, which is exactly what this breaker exists to
+        # catch; an equality check would silently stop counting it.
+        if deep_tier_model is None:
+            # Host has no deep-tier model (codex): the deep-tier spawn is the
+            # one carrying model=None. Preserve the original identity match
+            # rather than ranking, since None has no rank.
+            if event.get("model") is not None:
+                continue
+        elif model_rank(event.get("model")) < tier_rank(TIER_DEEP):
             continue
         if not raw_list_mode:
             # AC-6: receipt-provenance cross-check. Skip when deep-tier model

@@ -23,7 +23,7 @@ MEMORY_DIR = ROOT / "memory"
 EXEMPT_FILE = HOOKS_DIR / "lib_models.py"
 
 # Regex that detects vendor model literals.
-_LITERAL_RE = re.compile(r"\b(haiku|sonnet|opus)\b")
+_LITERAL_RE = re.compile(r"\b(haiku|sonnet|opus|fable)\b")
 
 # Lines ending with this comment are exempt from the scan.
 _NOQA_SUFFIX = "# noqa: model-literal"

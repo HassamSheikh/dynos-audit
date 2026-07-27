@@ -1,6 +1,6 @@
 ---
 name: local
-description: "Internal dynos-work skill. Manage the project daemon: start, stop, status, logs, run-once, dashboard."
+description: "Internal dynos-work skill. Manage the project daemon: start, stop, status, logs, run-once, dashboard. Runs only when the user explicitly types /dynos-work:local; never auto-triggered from conversation."
 ---
 
 # dynos-work: Local

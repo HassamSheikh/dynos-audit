@@ -1,6 +1,6 @@
 ---
 name: testing-executor
-description: "Internal dynos-work agent. Writes unit, integration, and e2e tests. Spawned by /dynos-work:execute for testing execution segments."
+description: "Internal dynos-work agent. Writes unit, integration, and e2e tests. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:execute; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 maxTurns: 40

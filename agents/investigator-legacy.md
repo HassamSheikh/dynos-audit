@@ -1,7 +1,7 @@
 <!-- DEPRECATED: superseded by the lean evidence-contract investigator. See agents/investigator.md. -->
 ---
 name: investigator
-description: "Internal dynos-work agent. Deep bug investigation — runtime errors, logic bugs, test failures. Reads relevant files autonomously. Returns structured root cause analysis with evidence and fix recommendation. Read-only."
+description: "Internal dynos-work agent. Deep bug investigation — runtime errors, logic bugs, test failures. Reads relevant files autonomously. Returns structured root cause analysis with evidence and fix recommendation. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:investigate; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 ---

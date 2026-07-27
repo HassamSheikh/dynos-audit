@@ -1,6 +1,6 @@
 ---
 name: repair
-description: "Internal dynos-work skill. Manually repair a specific finding. Use when you want to fix one issue without running the full audit loop. /dynos-work:audit handles repair automatically."
+description: "Internal dynos-work skill. Manually repair one specific finding without running the full audit loop (/dynos-work:audit handles repair automatically). Runs only when the user explicitly types /dynos-work:repair; never auto-triggered from conversation."
 ---
 
 # dynos-work: Repair

@@ -1,6 +1,6 @@
 ---
 name: code-quality-auditor
-description: "Internal dynos-work agent. Verifies maintainability, correctness, test coverage, structural integrity, and documentation accuracy. Blocks on significant architecture degradation. Read-only."
+description: "Internal dynos-work agent. Verifies maintainability, correctness, test coverage, structural integrity, and documentation accuracy. Blocks on significant architecture degradation. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:audit; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Grep, Glob, Bash, Write]
 maxTurns: 20

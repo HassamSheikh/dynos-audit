@@ -1,6 +1,6 @@
 ---
 name: investigator
-description: "Internal dynos-work agent. Reasons over a pre-assembled evidence dossier to produce a structured bug report. MUST cite evidence IDs for every claim. Read-only."
+description: "Internal dynos-work agent. Reasons over a pre-assembled evidence dossier to produce a structured bug report. MUST cite evidence IDs for every claim. Read-only. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:investigate; never spawn this agent directly, from conversation, or outside a dynos-work task."
 tools: [Read, Grep]
 model: sonnet
 ---

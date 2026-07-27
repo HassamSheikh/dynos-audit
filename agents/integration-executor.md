@@ -1,6 +1,6 @@
 ---
 name: integration-executor
-description: "Internal dynos-work agent. Wires components together, connects external APIs, handles plumbing. Spawned by /dynos-work:execute for integration execution segments."
+description: "Internal dynos-work agent. Wires components together, connects external APIs, handles plumbing. Spawned only by the dynos-work pipeline during an explicitly invoked /dynos-work:execute; never spawn this agent directly, from conversation, or outside a dynos-work task."
 model: sonnet
 tools: [Read, Write, Edit, Grep, Glob, Bash]
 maxTurns: 40
