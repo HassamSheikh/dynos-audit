@@ -11,92 +11,59 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
-## [7.5.17] - 2026-07-27
-### Fixed
-- `pytest tests/ debug-module/tests/` in a single process no longer fails.
-  124 debug-module tests were erroring with
-  `ImportError: cannot import name ... from 'lib'`.
-- Cause was a top-level module name collision, not test pollution:
-  `hooks/lib.py` (a re-export facade) and `debug-module/lib/` (a package)
-  shared the name `lib`. Both roots land on `sys.path` during a combined
-  run, and Python caches by name rather than by path — so once any `tests/`
-  case imported `lib`, `sys.modules["lib"]` was pinned to the facade and
-  every debug-module `from lib import <step>` resolved against the wrong
-  module. Either suite alone was unaffected, which is why it went unnoticed.
-- debug-module's internal package is renamed `lib` -> `debuglib` (42
-  references across 15 files). `hooks/lib.py` is untouched: it is a
-  backwards-compat facade whose whole purpose is that `import lib` keeps
-  working, so it is the wrong side to rename.
-
-### Added
-- Guard test (`tests/test_import_root_collisions.py`) asserting no two
-  import roots (`hooks/`, `memory/`, `debug-module/`) expose the same
-  top-level module name. Five pre-existing `hooks` <-> `memory` collisions
-  (`agent_generator`, `lib_qlearn`, `postmortem`, `postmortem_analysis`,
-  `postmortem_improve`) are frozen in a documented allowlist — they are
-  latent rather than active, since `hooks/` wins the path order and nothing
-  needs the `memory/` copy under those names — so a sixth fails the build.
-
----
-
 ## [7.5.16] - 2026-07-27
 ### Fixed
-- dynos-work commands no longer fire without the user typing them.
-  `/dynos-work:<command>` is the only invocation route. Command names are
-  unchanged — `/dynos-work:resume`, `/dynos-work:status`, and so on.
-- Root cause was not the slash namespace (the plugin prefix already supplies
-  that) but the two surfaces that invoke a skill *without* a typed command:
-  - **Skill descriptions.** A description is a trigger signal, and these were
-    written as capability advertisements. `resume` said "Use after session
-    restart or context compression", so restarting a session could fire it;
-    `status` matched any question about status; `init` matched project-setup
-    requests; `maintain` advertised that it periodically scans and opens pull
-    requests. All 21 descriptions (and their 20 template mirrors) now state
-    what the command does and scope invocation to the explicit
-    `/dynos-work:<name>` form. `memory` and `execution` additionally keep
-    their legitimate pipeline-invoked route. The `founder` command template,
-    which has no `skills/` counterpart, is covered too.
-  - **Agent prompts.** The same leak existed one level down: an agent
-    description like "Implements API routes, services, business logic, and
-    auth" reads as a standing offer, so the model could spawn an executor or
-    auditor spontaneously outside any dynos-work task — a stray executor
-    writes code. All 37 agents in `agents/` and their 34 mirrors under
-    `cli/assets/templates/base/agents/` now name the `/dynos-work:<command>`
-    that spawns them and forbid direct spawning.
-  - **The SessionStart hook.** `hooks/session-start` injected
-    "Use dynos-work start for new tasks." into every session — a standing
-    instruction to enter the pipeline whenever a request looked task-shaped.
-    It now states that commands are user-invoked only and that the pipeline
-    must never be entered on the agent's own initiative.
+- `CHANGELOG.md` had entries for 7.5.16 and 7.5.17 that no manifest ever
+  carried. All three changes in PR #236 shipped as a single release, 7.5.15 —
+  the Release Hygiene workflow computes one version per PR from the base ref,
+  so hand-written per-change bumps were normalized away while their changelog
+  entries survived as orphans. The three entries are merged into 7.5.15.
 
-### Added
-- Guard test (`tests/test_explicit_invocation_only.py`, 160 cases) covering
-  every invocable surface: each skill and command template names its typed
-  command and declares itself never auto-triggered; each agent names the
-  command that spawns it and forbids direct spawning; no description on
-  either surface contains auto-trigger phrasing ("use after", "runs
-  automatically", "periodically", "proactively", "whenever"); template
-  mirrors have not drifted; skill names stay bare so the command is singly
-  namespaced; and the SessionStart hook does not reintroduce the standing
-  invocation order.
+### Changed
+- `CLAUDE.md` release hygiene no longer instructs contributors to hand-edit
+  version fields. `.github/workflows/release-hygiene.yml` runs
+  `scripts/bump_version.py` on every PR, which derives the next version from
+  the base ref, writes all four manifests, and pushes a
+  `chore: update release metadata` commit to the PR branch. Following the old
+  instruction produced redundant edits that CI overwrote, a push rejection on
+  the next `git push`, and — when a PR bundled several changes — one changelog
+  entry per change instead of one per release.
 
 ---
 
-## [7.5.15] - 2026-07-25
+## [7.5.15] - 2026-07-27
+
+Three independent changes, shipped together.
+
 ### Added
-- Frontier tier (`TIER_FRONTIER` → `fable`) as a fourth rung above `deep` in
-  `lib_models.TIER_TO_MODEL`, plus `TIER_RANK` as the single authority for
+- **Frontier tier.** `TIER_FRONTIER` → `fable` as a fourth rung above `deep`
+  in `lib_models.TIER_TO_MODEL`, plus `TIER_RANK` as the single authority for
   tier ordering. Codex maps it to `None` like every other tier.
-- Role tier ceilings (`lib_models.ROLE_TIER_CEILINGS`, `max_tier_for_role`,
-  `clamp_model_to_role_ceiling`). `router.resolve_model` is now a thin wrapper
-  that clamps the inner selector's result, so no selection path — explicit
-  policy override, epsilon-greedy exploration, UCB winner, benchmark
-  selection, learned history, or default — can put an executor role above
-  `deep`. A clamp emits `router_model_ceiling_clamp` and preserves the
-  pre-clamp pick on `uncapped_model`.
+- **Role tier ceilings** (`lib_models.ROLE_TIER_CEILINGS`,
+  `max_tier_for_role`, `clamp_model_to_role_ceiling`). `router.resolve_model`
+  is now a thin wrapper that clamps the inner selector's result, so no
+  selection path — explicit policy override, epsilon-greedy exploration, UCB
+  winner, benchmark selection, learned history, or default — can put an
+  executor role above `deep`. A clamp emits `router_model_ceiling_clamp` and
+  preserves the pre-clamp pick on `uncapped_model`.
 - Guard test (`tests/test_tier_ceiling_invariant.py`) driving the ceiling
   through the production `resolve_model` entry point rather than asserting on
   constants.
+- Guard test (`tests/test_explicit_invocation_only.py`, 160 cases) covering
+  every invocable surface: each skill and command template names its typed
+  command and declares itself never auto-triggered; each agent names the
+  command that spawns it and forbids direct spawning; no description contains
+  auto-trigger phrasing ("use after", "runs automatically", "periodically",
+  "proactively", "whenever"); template mirrors have not drifted; skill names
+  stay bare so the command is singly namespaced; and the SessionStart hook
+  does not reintroduce the standing invocation order.
+- Guard test (`tests/test_import_root_collisions.py`) asserting no two import
+  roots (`hooks/`, `memory/`, `debug-module/`) expose the same top-level
+  module name. Five pre-existing `hooks` <-> `memory` collisions
+  (`agent_generator`, `lib_qlearn`, `postmortem`, `postmortem_analysis`,
+  `postmortem_improve`) are frozen in a documented allowlist — latent rather
+  than active, since `hooks/` wins the path order and nothing needs the
+  `memory/` copy under those names — so a sixth fails the build.
 
 ### Changed
 - `planning` default tier moves `balanced` → `frontier`; `agents/planning.md`
@@ -115,6 +82,48 @@ and this project adheres to **Semantic Versioning**.
   preserved.
 - `tests/test_model_literal_guard.py` regex extended with `fable`; without it
   the new literal could leak outside `lib_models.py` unnoticed.
+- debug-module's internal package renamed `lib` -> `debuglib` (42 references
+  across 15 files). `hooks/lib.py` is untouched: it is a backwards-compat
+  facade whose whole purpose is that `import lib` keeps working, so it is the
+  wrong side to rename.
+
+### Fixed
+- **dynos-work commands no longer fire without the user typing them.**
+  `/dynos-work:<command>` is the only invocation route; command names are
+  unchanged. The root cause was not the slash namespace (the plugin prefix
+  already supplies that) but the three surfaces that invoke a command
+  *without* a typed one:
+  - **Skill descriptions.** A description is a trigger signal, and these were
+    written as capability advertisements. `resume` said "Use after session
+    restart or context compression", so restarting a session could fire it;
+    `status` matched any question about status; `init` matched project-setup
+    requests; `maintain` advertised that it periodically scans and opens pull
+    requests. All 21 descriptions (and their 20 template mirrors) now state
+    what the command does and scope invocation to the explicit
+    `/dynos-work:<name>` form. `memory` and `execution` keep their legitimate
+    pipeline-invoked route. The `founder` command template, which has no
+    `skills/` counterpart, is covered too.
+  - **Agent prompts.** The same leak one level down: a description like
+    "Implements API routes, services, business logic, and auth" reads as a
+    standing offer, so the model could spawn an executor or auditor
+    spontaneously outside any dynos-work task — a stray executor writes code.
+    All 37 agents in `agents/` and their 34 mirrors under
+    `cli/assets/templates/base/agents/` now name the `/dynos-work:<command>`
+    that spawns them and forbid direct spawning.
+  - **The SessionStart hook.** `hooks/session-start` injected "Use dynos-work
+    start for new tasks." into every session — a standing instruction to enter
+    the pipeline whenever a request looked task-shaped. It now states that
+    commands are user-invoked only and that the pipeline must never be entered
+    on the agent's own initiative.
+- **`pytest tests/ debug-module/tests/` in a single process.** 124
+  debug-module tests were erroring with `ImportError: cannot import name ...
+  from 'lib'`. The cause was a top-level module name collision, not test
+  pollution: `hooks/lib.py` (a re-export facade) and `debug-module/lib/` (a
+  package) shared the name `lib`. Both roots land on `sys.path` during a
+  combined run, and Python caches by name rather than by path — so once any
+  `tests/` case imported `lib`, `sys.modules["lib"]` was pinned to the facade
+  and every debug-module `from lib import <step>` resolved against the wrong
+  module. Either suite alone was unaffected, which is why it went unnoticed.
 
 ---
 
