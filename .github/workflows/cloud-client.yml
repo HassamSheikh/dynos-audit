@@ -1,0 +1,47 @@
+name: cloud-client
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hooks/cloud/**"
+      - "tests/cloud/**"
+      - "bin/dynos"
+      - ".github/workflows/cloud-client.yml"
+  pull_request:
+    paths:
+      - "hooks/cloud/**"
+      - "tests/cloud/**"
+      - "bin/dynos"
+      - ".github/workflows/cloud-client.yml"
+
+jobs:
+  pytest:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        py: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cryptography websockets keyring pytest pytest-asyncio
+
+      - name: Run tests
+        env:
+          DYNOS_KEYCHAIN: file
+        run: python -m pytest tests/cloud/ -q --tb=short
+
+      - name: CLI smoke
+        env:
+          DYNOS_KEYCHAIN: file
+        run: ./bin/dynos status
