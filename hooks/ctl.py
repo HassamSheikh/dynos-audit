@@ -1983,6 +1983,45 @@ def compute_spawn_budget_status(
     }
 
 
+def cmd_ensemble_next(args: argparse.Namespace) -> int:
+    """Print the next required spawn for each ensemble auditor.
+
+    Deterministic replacement for interpreting the ensemble cascade prose:
+    reads the audit plan and the shard receipts on disk and reports, per
+    spawn-action auditor, ``status: spawn`` (with the exact ``model`` and
+    ``shard_step_name`` to use), ``status: complete`` (with the verdict),
+    or ``status: single`` for non-ensemble auditors (plan model). The
+    orchestrator loops on this command until ``complete`` is true.
+
+    stdout: {"status": "ok", "auditors": [...], "pending": [names],
+             "complete": bool}
+    Exit 1 when the task has no audit plan or routing receipt.
+    """
+    import lib_ensemble  # noqa: PLC0415
+
+    task_dir = Path(args.task_dir).resolve()
+    entries = lib_ensemble.load_plan_entries(task_dir)
+    if not entries:
+        print(json.dumps({
+            "status": "blocked",
+            "task_dir": str(task_dir),
+            "error": "no audit-plan.json or audit-routing receipt found; run router.py audit-plan first",
+        }, indent=2))
+        return 1
+    auditor_name = getattr(args, "auditor_name", None)
+    if auditor_name:
+        result = lib_ensemble.ensemble_next(task_dir, auditor_name)
+        pending = [auditor_name] if (
+            result["status"] in (lib_ensemble.STATUS_SPAWN, lib_ensemble.STATUS_INVALID)
+            or result["gaps"]
+        ) else []
+        payload = {"auditors": [result], "pending": pending, "complete": not pending}
+    else:
+        payload = lib_ensemble.ensemble_next_all(task_dir, entries)
+    print(json.dumps({"status": "ok", "task_dir": str(task_dir), **payload}, indent=2))
+    return 0
+
+
 def cmd_check_spawn_budget(args: argparse.Namespace) -> int:
     """Check whether the current task has exhausted its wasted-spawn budget.
 
@@ -4708,6 +4747,31 @@ def cmd_run_audit_reaudit_plan(args: argparse.Namespace) -> int:
 def cmd_run_audit_summary(args: argparse.Namespace) -> int:
     task_dir = Path(args.task_dir).resolve()
     try:
+        # Ensemble cascade must be complete before the audit is summarised.
+        # Surfacing the gaps here (rather than only at run-audit-finish)
+        # stops the retrospective/postmortem from being written against a
+        # half-run cascade. Same evaluation as the DONE gate.
+        import lib_ensemble  # noqa: PLC0415
+        from lib_receipts import read_receipt as _read_receipt  # noqa: PLC0415
+        routing = _read_receipt(task_dir, "audit-routing")
+        routing_entries = (
+            [e for e in routing.get("auditors", []) if isinstance(e, dict)]
+            if isinstance(routing, dict) and isinstance(routing.get("auditors"), list)
+            else []
+        )
+        ensemble_gaps = lib_ensemble.cascade_gaps(task_dir, routing_entries)
+        if ensemble_gaps:
+            print(json.dumps({
+                "status": "blocked",
+                "task_dir": str(task_dir),
+                "error": (
+                    "ensemble cascade incomplete; run `ctl ensemble-next` and spawn "
+                    "the pending tiers before the audit summary"
+                ),
+                "ensemble_gaps": ensemble_gaps,
+            }, indent=2))
+            return 1
+
         reports_dir = task_dir / "audit-reports"
         reports: list[dict] = []
         findings_by_auditor: dict[str, int] = {}
@@ -6802,6 +6866,23 @@ def register_task_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> N
         help="Path to .dynos/task-<id> directory whose classification will receive the veto.",
     )
     apply_auto_approve_veto_parser.set_defaults(func=cmd_apply_auto_approve_veto)
+
+    ensemble_next_parser = subparsers.add_parser(
+        "ensemble-next",
+        help=(
+            "Print the next required spawn per ensemble auditor (fast -> balanced "
+            "on zero findings -> deep on any finding), computed from the audit plan "
+            "and the shard receipts on disk. Loop until \"complete\" is true."
+        ),
+    )
+    ensemble_next_parser.add_argument("task_dir", help="Path to .dynos/task-{id}")
+    ensemble_next_parser.add_argument(
+        "auditor_name",
+        nargs="?",
+        default=None,
+        help="Evaluate a single auditor; omit to evaluate every spawn-action auditor.",
+    )
+    ensemble_next_parser.set_defaults(func=cmd_ensemble_next)
 
     check_spawn_budget_parser = subparsers.add_parser(
         "check-spawn-budget",

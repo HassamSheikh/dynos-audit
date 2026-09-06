@@ -83,7 +83,7 @@ All 20 auditor agent files also carry these sections directly, so standalone spa
 
 For each auditor in the plan:
 - If `action: "skip"`: log `{timestamp} [SKIP] {name} — {reason}` and do not spawn
-- If `action: "spawn"`: spawn with the specified `model` (null = default)
+- If `action: "spawn"`: spawn with the model returned by `"$DYNOS" ctl ensemble-next` — the plan `model` is only used for non-ensemble auditors (null = default)
 - Log: `{timestamp} [ROUTE] {name} model={model} route={route_mode} source={route_source}`
 - For the plan-auditor: For each AC in spec.md naming a function signature, verify plan.md's Component section names the same signature. Mismatch is a partial finding.
 
@@ -142,19 +142,25 @@ For `route_mode == "generic"` the `--final-envelope` argument may be omitted.
 
 `"$DYNOS" ctl audit-receipt ...` calls `receipt_audit_done(...)`, which re-asserts the same sidecar exists at that exact path and that its contents match `injected_agent_sha256`. A mismatch raises `ValueError`. For `route_mode == "generic"` (no learned agent) the sidecar assertion is skipped and `injected_agent_sha256` may be `None`; `route_mode` and `agent_path` are still required keyword arguments. The wrapper derives counts from `--report-path`; when no report exists it writes literal zero findings only. `run-audit-setup` writes the `audit-routing` receipt from the deterministic audit plan before prompt injection; the per-auditor `audit-receipt` is the sidecar proof for spawned learned auditors.
 
-For ensemble auditors, write one receipt per model run. Add `--ensemble-context --shard-step-name "{auditor_name}-{model_used}"` to each `audit-receipt` call so the file is named `receipts/audit-{auditor_name}-{model_used}.json`. Do not include the `audit-` prefix in `--shard-step-name`; `audit-{auditor_name}` collapsed receipts do not satisfy the DONE gate for ensemble accounting.
+For ensemble auditors, write one receipt per model run. Add `--ensemble-context --shard-step-name "{auditor_name}-{model_used}"` to each `audit-receipt` call so the file is named `receipts/audit-{auditor_name}-{model_used}.json`. Do not include the `audit-` prefix in `--shard-step-name`; `audit-{auditor_name}` collapsed receipts do not satisfy the DONE gate for ensemble accounting. `audit-receipt` also refuses a shard receipt that is out of cascade order — any tier other than the fast tier must be exactly the model `ensemble-next` reported — so a deep-tier receipt alone is rejected until the voting tiers have receipts.
 
 The router handles fast-track reduction, skip policy, model policy, security floor enforcement, ensemble voting triggers, and learned agent routing in deterministic code. No prompt interpretation needed for these decisions. Do not re-derive skip thresholds, model assignments, or routing modes from markdown tables or retrospective files.
 
-**Ensemble Voting:** If the router plan has `"ensemble": true` for an auditor, follow this sequential cascade instead of a single spawn:
+**Ensemble Voting (deterministic — computed by ctl, never by prompt logic):** The router marks auditors `"ensemble": true`. For those auditors the plan's `model` field is NOT the spawn model. Before every audit batch, run:
 
-1. Spawn **fast-tier** (first model in `ensemble_voting_models`).
-2. If fast-tier returns **zero findings** → spawn **balanced-tier** (second model in `ensemble_voting_models`).
-   - If balanced-tier returns **zero findings** → audit passes. Log: `{timestamp} [VOTE] {name} — PASS (fast-tier then balanced-tier: zero findings)`
-   - If balanced-tier returns **any findings** → escalate: spawn `ensemble_escalation_model` (deep-tier). Deep-tier verdict is final and binding. Log: `{timestamp} [VOTE] {name} — Escalating to {escalation_model}`
-3. If fast-tier returns **any findings** → skip balanced-tier entirely, escalate immediately: spawn `ensemble_escalation_model` (deep-tier). Deep-tier verdict is final and binding. Log: `{timestamp} [VOTE] {name} — fast-tier found issues, escalating directly to {escalation_model}`
+```bash
+"$DYNOS" ctl ensemble-next .dynos/task-{id}
+```
 
-If `"ensemble": false`, spawn normally with the single tier from the plan. **Fail-closed:** On null-model hosts, the ensemble cascade still executes but with host-default models; escalation to deep-tier still occurs on findings, ensuring detection does not degrade.
+It evaluates every spawn-action auditor against the shard receipts on disk and returns, per auditor, one of:
+
+- `"status": "spawn"` with the exact `model` and `shard_step_name` to use now (`reason` is `cascade_step` for the next voting tier or `escalate_on_findings` for the deep tier);
+- `"status": "complete"` with `verdict` `pass` (every voting tier clean) or `escalated` (deep tier ran; its verdict is final and binding);
+- `"status": "single"` for non-ensemble auditors, carrying the plan `model`.
+
+The audit batch is a loop: spawn every auditor whose status is `spawn` or `single` (in parallel, at the returned `model`), write each receipt, then run `ensemble-next` again. Stop only when the output reports `"complete": true`. Do not decide by hand whether a tier is needed — the cascade (fast tier → balanced tier on zero findings → deep tier on any finding) is computed by ctl. Log each ensemble spawn as `{timestamp} [VOTE] {name} — {reason} → {model}`.
+
+**Enforcement (there is no shortcut):** `router.py audit-inject-prompt` refuses to build a prompt for an ensemble auditor at any model other than the one `ensemble-next` returns; `audit-receipt` refuses a shard receipt written out of cascade order; `run-audit-summary` and the DONE gate refuse while any cascade is incomplete. A single deep-tier spawn does not satisfy an ensemble auditor. On null-model hosts the router sets `"ensemble": false` and the auditor spawns once at the plan model.
 
 **Visual Audit Pass:** For tasks where `domains` includes `"ui"`, run a visual audit: start the dev server, use a browser subagent to screenshot modified screens, then evaluate with Claude 3.5 Sonnet against the planning-phase Design Decisions. Report visual findings as category `vision-finding`. Log: `{timestamp} [VISION] UI audit complete -- {N} visual bugs found`.
 
@@ -191,7 +197,7 @@ Parse the JSON output. The command emits a single-line JSON object with keys `st
 
 Do not proceed with spawning auditors. The pause is intentional — the policy is calibrated from this project's retrospective history, and the wasted-spawn count has crossed the learned threshold.
 
-Spawn the determined auditors simultaneously, passing the resolved model for each auditor in the subagent spawn configuration. For alongside-mode auditors, this means two spawns for that role (generic + learned), both counted in {N}.
+Spawn the determined auditors simultaneously, passing for each auditor the model returned by `ensemble-next` (never the plan `model` for an ensemble auditor) in the subagent spawn configuration. For alongside-mode auditors, this means two spawns for that role (generic + learned), both counted in {N}.
 
 Each auditor writes its own report to `.dynos/task-{id}/audit-reports/{auditor}-checkpoint-{timestamp}.json`. Every auditor agent has a write capability sufficient for this: auditors with `Bash` use a heredoc; `spec-completion-auditor` has the `Write` tool scoped via `write_policy.py` to its own report path. The role file stamped above is what unlocks the `audit-reports/` write rule for these subagents.
 

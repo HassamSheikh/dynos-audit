@@ -11,6 +11,36 @@ and this project adheres to **Semantic Versioning**.
 
 ---
 
+## [7.5.17] - 2026-09-06
+### Fixed
+- The audit ensemble cascade (fast tier → balanced tier on zero findings →
+  deep tier on any finding) now runs without the operator asking for it.
+  Before, the cascade existed only as prose in the audit skill while the
+  router handed the orchestrator a single `model` per auditor, so every
+  ensemble auditor was spawned once at that model and the cascade was
+  skipped; the DONE gate then accepted a lone deep-tier shard receipt as a
+  completed ensemble. Four deterministic enforcement points replace the
+  prose:
+  - `ctl ensemble-next <task-dir> [auditor]` computes, from the audit plan
+    and the shard receipts on disk, the next required spawn per auditor
+    (`spawn` with the exact model and `shard_step_name`, `complete` with
+    the verdict, or `single` for non-ensemble auditors). The audit skill
+    loops on it until `"complete": true`.
+  - `router.py audit-inject-prompt` refuses to prepare an ensemble auditor
+    at any model other than the next cascade step (the fast tier is always
+    allowed, so a re-audit can restart the cascade).
+  - `ctl audit-receipt --ensemble-context` refuses a shard receipt written
+    out of cascade order, and fails closed when the auditor has no ensemble
+    entry in `audit-plan.json` or the `audit-routing` receipt.
+  - `ctl run-audit-summary` and the DONE gate (`_check_ensemble_voting`)
+    share one evaluation in the new `hooks/lib_ensemble.py`; an escalation
+    receipt without the voting-tier receipts, or a balanced tier skipped
+    after a clean fast tier, is a gap. Later-tier shards older than the
+    current fast-tier shard are treated as stale so repair re-audits start
+    a fresh cascade.
+
+---
+
 ## [7.5.16] - 2026-07-27
 ### Fixed
 - `CHANGELOG.md` had entries for 7.5.16 and 7.5.17 that no manifest ever

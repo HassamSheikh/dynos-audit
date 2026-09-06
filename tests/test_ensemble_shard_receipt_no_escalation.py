@@ -51,6 +51,17 @@ def _create_task_dir(tmp_path: Path) -> Path:
     task_dir.mkdir(parents=True)
     (task_dir / "receipts").mkdir()
     (task_dir / "audit-reports").mkdir()
+    # receipt_audit_done(ensemble_context=True) fails closed unless the
+    # auditor has an ensemble entry in audit-plan.json (cascade-order check).
+    (task_dir / "audit-plan.json").write_text(json.dumps({
+        "auditors": [{
+            "name": AUDITOR_NAME,
+            "action": "spawn",
+            "ensemble": True,
+            "ensemble_voting_models": [MODEL_HAIKU, MODEL_SONNET],  # noqa: model-literal
+            "ensemble_escalation_model": "",
+        }]
+    }), encoding="utf-8")
     return task_dir
 
 
