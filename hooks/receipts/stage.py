@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from lib_core import _persistent_project_dir
+import lib_ensemble as _lib_ensemble
 import lib_host as _lib_host
 import lib_models as _lib_models
 from lib_log import log_event, verify_signed_events
@@ -1166,6 +1167,53 @@ def _emit_content_pairing_event(
         pass
 
 
+def _assert_cascade_order(task_dir: Path, auditor_name: str, model_used: str | None) -> None:
+    """Refuse an ensemble shard receipt written out of cascade order.
+
+    The cascade state is computed by ``lib_ensemble.ensemble_next`` from the
+    shard receipts already on disk. The fast tier is always accepted (it
+    starts or restarts the cascade); every other tier must be exactly the
+    next spawn the cascade requires. This is what makes a single deep-tier
+    spawn insufficient for an ensemble auditor: its receipt is refused until
+    the voting tiers have run. Fails closed when the auditor has no ensemble
+    entry in ``audit-plan.json`` or the ``audit-routing`` receipt.
+    """
+    cascade = _lib_ensemble.ensemble_next(task_dir, auditor_name)
+    status = cascade.get("status")
+    if not cascade.get("ensemble"):
+        if status == _lib_ensemble.STATUS_SINGLE:
+            raise ValueError(
+                f"audit-{auditor_name}: plan entry has ensemble=false; write a "
+                "plain audit receipt without --ensemble-context"
+            )
+        raise ValueError(
+            f"audit-{auditor_name}: ensemble_context requires an ensemble entry "
+            "for the auditor in audit-plan.json or the audit-routing receipt"
+        )
+    voting = cascade.get("voting_models") or []
+    fast_tier = voting[0] if voting else None
+    if status == _lib_ensemble.STATUS_INVALID:
+        raise ValueError(
+            f"audit-{auditor_name}: ensemble cascade cannot be evaluated: "
+            + "; ".join(cascade.get("gaps") or [])
+        )
+    if model_used == fast_tier:
+        return
+    if status == _lib_ensemble.STATUS_COMPLETE:
+        raise ValueError(
+            f"audit-{auditor_name}: ensemble cascade already complete "
+            f"(verdict={cascade.get('verdict')!r}); a re-audit must start "
+            f"again at the fast tier {fast_tier!r}, got {model_used!r}"
+        )
+    expected = cascade.get("model")
+    if status != _lib_ensemble.STATUS_SPAWN or expected != model_used:
+        raise ValueError(
+            f"audit-{auditor_name}: ensemble cascade order violation — the next "
+            f"required tier is {expected!r} ({cascade.get('reason')}), got "
+            f"{model_used!r}. Run `ctl ensemble-next` before each spawn."
+        )
+
+
 def receipt_audit_done(
     task_dir: Path,
     auditor_name: str,
@@ -1269,6 +1317,7 @@ def receipt_audit_done(
                 f"{expected_shard_step_name!r} so the receipt is named "
                 f"audit-{expected_shard_step_name}.json"
             )
+        _assert_cascade_order(task_dir, auditor_name, model_used)
         receipt_step_name = f"audit-{shard_step_name}"
     else:
         receipt_step_name = f"audit-{auditor_name}"

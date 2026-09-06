@@ -39,7 +39,7 @@ This command reads `manifest.json`, derives the audit plan, writes `.dynos/task-
 
 For each auditor in the plan:
 - If `action: "skip"`: log `{timestamp} [SKIP] {name} — {reason}` and do not spawn
-- If `action: "spawn"`: spawn with the specified `model` (null = default)
+- If `action: "spawn"`: spawn with the model returned by `python3 "{{HOOKS_PATH}}/ctl.py" ensemble-next` — the plan `model` is only used for non-ensemble auditors (null = default)
 - Log: `{timestamp} [ROUTE] {name} model={model} route={route_mode} source={route_source}`
 
 **Learned Auditor Injection (MANDATORY — deterministic via router):** Build the auditor's spawn prompt with `router.py audit-inject-prompt`. Pipe the base prompt over stdin and capture stdout as the prompt you pass to the Agent tool — do NOT read the learned agent file yourself or build the prompt by hand. The router does the frontmatter stripping, applies the learned-auditor block under the literal heading `## Learned Auditor Instructions`, computes the SHA-256 of the exact bytes it prints, and atomically writes the per-model sidecar at `.dynos/task-{id}/receipts/_injected-auditor-prompts/{auditor_name}-{model_used}.sha256` (with a companion `.txt` of the same bytes; when no model is specified the literal `default` is substituted in the filename).
@@ -72,15 +72,21 @@ python3 "{{HOOKS_PATH}}/ctl.py" audit-receipt .dynos/task-{id} {auditor_name} \
 
 The router handles fast-track reduction, skip policy, model policy, security floor enforcement, ensemble voting triggers, and learned agent routing in deterministic code. No prompt interpretation needed for these decisions. Do not re-derive skip thresholds, model assignments, or routing modes from markdown tables or retrospective files.
 
-**Ensemble Voting:** If the router plan has `"ensemble": true` for an auditor, follow this sequential cascade instead of a single spawn:
+**Ensemble Voting (deterministic — computed by ctl, never by prompt logic):** The router marks auditors `"ensemble": true`. For those auditors the plan's `model` field is NOT the spawn model. Before every audit batch, run:
 
-1. Spawn **haiku** (first model in `ensemble_voting_models`).
-2. If haiku returns **zero findings** → spawn **sonnet** (second model in `ensemble_voting_models`).
-   - If sonnet returns **zero findings** → audit passes. Log: `{timestamp} [VOTE] {name} — PASS (haiku then sonnet: zero findings)`
-   - If sonnet returns **any findings** → escalate: spawn `ensemble_escalation_model` (opus). Opus verdict is final and binding. Log: `{timestamp} [VOTE] {name} — Escalating to {escalation_model}`
-3. If haiku returns **any findings** → skip sonnet entirely, escalate immediately: spawn `ensemble_escalation_model` (opus). Opus verdict is final and binding. Log: `{timestamp} [VOTE] {name} — haiku found issues, escalating directly to {escalation_model}`
+```bash
+python3 "{{HOOKS_PATH}}/ctl.py" ensemble-next .dynos/task-{id}
+```
 
-If `"ensemble": false`, spawn normally with the single model from the plan.
+It evaluates every spawn-action auditor against the shard receipts on disk and returns, per auditor, one of:
+
+- `"status": "spawn"` with the exact `model` and `shard_step_name` to use now (`reason` is `cascade_step` for the next voting tier or `escalate_on_findings` for the deep tier);
+- `"status": "complete"` with `verdict` `pass` (every voting tier clean) or `escalated` (deep tier ran; its verdict is final and binding);
+- `"status": "single"` for non-ensemble auditors, carrying the plan `model`.
+
+The audit batch is a loop: spawn every auditor whose status is `spawn` or `single` (in parallel, at the returned `model`), write each receipt, then run `ensemble-next` again. Stop only when the output reports `"complete": true`. Do not decide by hand whether a tier is needed — the cascade (fast tier → balanced tier on zero findings → deep tier on any finding) is computed by ctl. Log each ensemble spawn as `{timestamp} [VOTE] {name} — {reason} → {model}`.
+
+**Enforcement (there is no shortcut):** `router.py audit-inject-prompt` refuses to build a prompt for an ensemble auditor at any model other than the one `ensemble-next` returns; `audit-receipt` refuses a shard receipt written out of cascade order; `run-audit-summary` and the DONE gate refuse while any cascade is incomplete. A single deep-tier spawn does not satisfy an ensemble auditor. On null-model hosts the router sets `"ensemble": false` and the auditor spawns once at the plan model.
 
 **Visual Audit Pass:** For tasks where `domains` includes `"ui"`, run a visual audit: start the dev server, use a browser subagent to screenshot modified screens, then evaluate with Claude 3.5 Sonnet against the planning-phase Design Decisions. Report visual findings as category `vision-finding`. Log: `{timestamp} [VISION] UI audit complete -- {N} visual bugs found`.
 
@@ -91,7 +97,7 @@ Append to log (the `[STAGE] → CHECKPOINT_AUDIT` line is auto-written by `trans
 {timestamp} [SPAWN] {N} auditors in parallel ({list of names})
 ```
 
-Spawn the determined auditors simultaneously, passing the resolved model for each auditor in the subagent spawn configuration. For alongside-mode auditors, this means two spawns for that role (generic + learned), both counted in {N}.
+Spawn the determined auditors simultaneously, passing for each auditor the model returned by `ensemble-next` (never the plan `model` for an ensemble auditor) in the subagent spawn configuration. For alongside-mode auditors, this means two spawns for that role (generic + learned), both counted in {N}.
 
 Each writes its report to `.dynos/task-{id}/audit-reports/{auditor}-checkpoint-{timestamp}.json`.
 

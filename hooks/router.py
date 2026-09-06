@@ -55,6 +55,7 @@ from lib_models import (
     tier_rank as _tier_rank,
 )
 from lib_host import detect_host as _detect_host
+import lib_ensemble as _lib_ensemble
 from lib_log import log_event
 from lib_receipts import (
     INJECTED_AUDITOR_PROMPTS_DIR,
@@ -2216,6 +2217,47 @@ def cmd_audit_inject_prompt(args: argparse.Namespace) -> int:
     if target is None:
         print(json.dumps({"error": f"auditor not found in plan: {auditor_name}"}))
         return 1
+
+    # Ensemble cascade enforcement: an ensemble auditor may only be prepared
+    # at the tier `lib_ensemble` says comes next (or at the fast tier, which
+    # starts/restarts the cascade). The plan's `model` field is NOT the spawn
+    # model for ensemble auditors; refusing here stops the single-spawn
+    # shortcut before an Agent call is ever issued.
+    if _lib_ensemble.is_ensemble_entry(target):
+        cascade = _lib_ensemble.ensemble_next(plan_path.resolve().parent, auditor_name, target)
+        voting = cascade.get("voting_models") or []
+        fast_tier = voting[0] if voting else None
+        requested = args.model
+        if cascade.get("status") == _lib_ensemble.STATUS_INVALID:
+            print(json.dumps({
+                "error": f"ensemble auditor {auditor_name} cannot be evaluated: "
+                         + "; ".join(cascade.get("gaps") or []),
+                "cascade": cascade,
+            }))
+            return 1
+        if not requested:
+            print(json.dumps({
+                "error": f"ensemble auditor {auditor_name} requires --model; "
+                         f"next cascade step is {cascade.get('model') or fast_tier!r}",
+                "cascade": cascade,
+            }))
+            return 1
+        if requested != fast_tier and (
+            cascade.get("status") != _lib_ensemble.STATUS_SPAWN
+            or cascade.get("model") != requested
+        ):
+            expected = (
+                f"cascade complete (verdict={cascade.get('verdict')!r}); restart at {fast_tier!r}"
+                if cascade.get("status") == _lib_ensemble.STATUS_COMPLETE
+                else f"next required tier is {cascade.get('model')!r} ({cascade.get('reason')})"
+            )
+            print(json.dumps({
+                "error": f"ensemble auditor {auditor_name}: refusing to prepare a "
+                         f"{requested!r} spawn — {expected}. Run `ctl ensemble-next` "
+                         "and spawn the model it returns.",
+                "cascade": cascade,
+            }))
+            return 1
 
     # Read base prompt from stdin
     base_prompt = _sys.stdin.read()

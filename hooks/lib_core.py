@@ -647,99 +647,23 @@ def _check_ensemble_voting(
 
     Runs across ALL spawn entries flagged ``ensemble=true``, whether
     registry-eligible or not — the voting contract is identical.
+    Delegates to ``lib_ensemble.evaluate_cascade`` so the DONE gate, the
+    receipt writer, the prompt injector and ``ctl ensemble-next`` share one
+    definition of "the cascade ran". A cascade satisfies the gate only when
+    every voting tier it reached has a shard receipt in cascade order:
+    fast tier always; balanced tier when the fast tier was clean; deep tier
+    when any voting tier found something. An escalation receipt without the
+    voting-tier receipts is a gap, not a pass.
     Returns the list of gap strings (possibly empty).
     """
-    from lib_receipts import read_receipt
+    import lib_ensemble  # noqa: PLC0415
 
-    gaps: list[str] = []
-
-    for name, entry in routing_by_name.items():
-        if entry.get("action") != "spawn":
-            continue
-        if entry.get("ensemble") is not True:
-            continue
-        voting_raw = entry.get("ensemble_voting_models") or entry.get("voting_models") or []
-        voting_models = [m for m in voting_raw if isinstance(m, str) and m] if isinstance(voting_raw, list) else []
-        escalation_model = entry.get("ensemble_escalation_model") or entry.get("escalation_model")
-        if not isinstance(escalation_model, str) or not escalation_model:
-            escalation_model = ""
-        allowed_models: set[str] = set(voting_models)
-        if escalation_model:
-            allowed_models.add(escalation_model)
-
-        if not voting_models:
-            gaps.append(
-                f"auditor {name} ensemble=true but voting_models is empty"
-            )
-            continue
-
-        # Gather per-model receipts. Ensemble accounting is intentionally
-        # per model: receipts/audit-{auditor}-{model}.json.
-        per_model: dict[str, dict] = {}
-        for model in voting_models:
-            shard = read_receipt(task_dir, f"audit-{name}-{model}", min_version=2)
-            if shard is not None:
-                per_model[model] = shard
-
-        # Escalation receipt lookup
-        escalation_receipt: dict | None = None
-        if escalation_model:
-            shard = read_receipt(task_dir, f"audit-{name}-{escalation_model}", min_version=2)
-            if shard is not None:
-                escalation_receipt = shard
-
-        # Validate every receipt's model_used ∈ allowed_models.
-        all_receipts: list[tuple[str, dict]] = []
-        for m, r in per_model.items():
-            all_receipts.append((m, r))
-        if escalation_receipt is not None:
-            all_receipts.append((escalation_model, escalation_receipt))
-        for _label, r in all_receipts:
-            mu = r.get("model_used")
-            if isinstance(mu, str) and mu and mu not in allowed_models:
-                gaps.append(
-                    f"auditor {name} receipt model_used={mu} not in voting set"
-                )
-
-        # Acceptance rule: either every voting-model receipt found NOTHING
-        # (zero findings, blocking or not), or an escalation receipt exists.
-        # The cascade protocol escalates to the deep tier on ANY finding — a
-        # non-blocking nit at the cheap tier still warrants deep-tier
-        # confirmation — so the gate binds on finding_count, not just
-        # blocking_count. Keying the gate on blocking_count alone left a seam:
-        # an auditor with non-blocking cheap-tier findings could be run at the
-        # mid tier (or skip escalation entirely) and still pass, silently
-        # dropping the protocol-required deep-tier shard.
-        all_voting_present = all(m in per_model for m in voting_models)
-        if all_voting_present:
-            all_clean = True
-            for m in voting_models:
-                r = per_model[m]
-                try:
-                    fc = int(r.get("finding_count", -1))
-                except (TypeError, ValueError):
-                    fc = -1
-                if fc != 0:
-                    all_clean = False
-                    break
-            if all_clean:
-                continue  # ensemble accepted via zero-finding consensus
-        # Fall through → need escalation receipt.
-        if escalation_receipt is None:
-            missing = [m for m in voting_models if m not in per_model]
-            if missing:
-                gaps.append(
-                    f"auditor {name} ensemble missing voting-model receipt(s): "
-                    f"{', '.join(missing)} and no escalation receipt for {escalation_model!r}"
-                )
-            else:
-                gaps.append(
-                    f"auditor {name} ensemble voting-model receipts found issues "
-                    f"(non-zero findings) and no escalation receipt for {escalation_model!r}"
-                )
-
-    return gaps
-
+    entries = [
+        dict(entry, name=name)
+        for name, entry in routing_by_name.items()
+        if isinstance(entry, dict)
+    ]
+    return lib_ensemble.cascade_gaps(task_dir, entries)
 
 def _check_postmortem_receipts(task_dir: Path) -> list[str]:
     """Check (d) postmortem-generated/skipped presence and (e) the
